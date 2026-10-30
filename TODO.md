@@ -8,6 +8,8 @@
 - [ ] Run `./uninstall.sh` for real once, then `./install.sh` again (only tested with a stand-in `docker`, a fake home folder and a throwaway Keychain entry; the engine's container, volumes and image were added since and are untested)
 
 ## Later
+- [ ] Once these changes are on GitHub's main, run `./install.sh` from `~/Projects/portable` to switch to the installed copy in `~/.local/share/portable` (until then `portable` still runs the working copy, which hides itself; installing before pushing would install the old version from GitHub)
+- [ ] Run `portable update` once for real after a merge (only tested against a local stand-in for GitHub)
 - [ ] Try `/start` and `/stop` on Portfolio2 once, from the Mac and in a session (the Mac ones were written from `bin/portable`'s code and the test run was blocked by the permission check; the session ones in `image/skills/` were only checked to load, not run)
 - [ ] Check the container's Claude colors now match the host (TERM/COLORTERM are passed through; only the variables were checked, not the colors on screen)
 - [ ] Config repo updates briefly show unfiltered `CLAUDE.md`/rules to sessions already running (atomic swap of a versioned clone would close it)

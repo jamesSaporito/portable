@@ -1,6 +1,6 @@
 name: portable
 
-# Run through bin/portable, which sets WORKSPACE_DIR and exports secrets from the Keychain.
+# Run through bin/portable, which sets the folders below and exports secrets from the Keychain.
 services:
   # Docker engine for the containers Claude starts, shared by every session. bin/portable starts it
   # before each session and it keeps running (with those containers) after sessions end. When its image
@@ -25,9 +25,20 @@ services:
       - PORTABLE_FIREWALL
       - PORTABLE_ALLOW_DOMAINS
     volumes:
-      # Same mount as the dev container, so bind mounts in a project's compose file (./src:/app)
-      # resolve to the same files. Nothing else on the Mac is visible to the engine.
+      # All of WORKSPACE_DIR, at the same path as in the dev containers, so bind mounts in a project's
+      # compose file (./src:/app) resolve to the same files for every session, whichever folder it
+      # started in. Nothing else on the Mac is visible to the engine.
       - ${WORKSPACE_DIR:?run through bin/portable or set WORKSPACE_DIR}:${WORKSPACE_DIR}
+      # Folders hidden even inside WORKSPACE_DIR (load_hidden in lib/launch.sh), covered with empty,
+      # read-only ones. Bind mounts the engine makes include these, so containers can't reach them.
+      - &hide-self
+        type: tmpfs
+        target: ${PORTABLE_HIDE_SELF:?run through bin/portable}
+        read_only: true
+      - &hide-config
+        type: tmpfs
+        target: ${PORTABLE_HIDE_CONFIG:?run through bin/portable}
+        read_only: true
       # Images, build cache, containers and their volumes (e.g. databases), kept across restarts.
       - docker-data:/var/lib/docker
       # TLS certificates the engine generates at start; the dev container gets the client half.
@@ -78,8 +89,12 @@ services:
       - PORTABLE_CLAUDE_CONFIG_DISABLE
       # Host ~/.claude/settings.json, merged in at start minus hooks and other host commands.
       - PORTABLE_CLAUDE_SETTINGS
-      # Paths inside it are kept when host settings are merged (they exist in the container too).
-      - WORKSPACE_DIR
+      # The folder this session shares, as WORKSPACE_DIR in here: paths inside it are kept when host
+      # settings are merged (they exist in the container too). The rest are for doctor.sh.
+      - WORKSPACE_DIR=${PORTABLE_SESSION_DIR:?run through bin/portable}
+      - PORTABLE_WORKSPACE_ROOT=${WORKSPACE_DIR}
+      - PORTABLE_HIDE_SELF
+      - PORTABLE_HIDE_CONFIG
       # Host terminal's color support. Without them Docker sets TERM=xterm and no COLORTERM, so
       # Claude Code falls back to a smaller palette and its colors come out darker.
       - TERM
@@ -95,9 +110,11 @@ services:
       - DOCKER_TLS_VERIFY=1
       - DOCKER_CERT_PATH=/etc/portable/docker-certs
     volumes:
-      # The only host folder the container can see.
-      # Mounted at its Mac path, so recorded paths (git worktrees, etc.) work on both sides.
-      - ${WORKSPACE_DIR:?run through bin/portable or set WORKSPACE_DIR}:${WORKSPACE_DIR}
+      # The only host folder the container can see: the one portable was started in, inside
+      # WORKSPACE_DIR. Mounted at its Mac path, so recorded paths (git worktrees, etc.) work on both sides.
+      - ${PORTABLE_SESSION_DIR:?run through bin/portable}:${PORTABLE_SESSION_DIR}
+      - *hide-self
+      - *hide-config
       # Claude settings and history (CLAUDE_CONFIG_DIR); no credentials, those come from env.
       - claude-state:/home/dev/.claude
       # Clone of PORTABLE_CLAUDE_CONFIG_REPO; ~/.claude links into it, so it must persist too.

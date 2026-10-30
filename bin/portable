@@ -6,6 +6,7 @@
 #   portable ps                          -> list running containers
 #   portable stop NAME                   -> stop one
 #   portable doctor                      -> check the setup, on the Mac and in a container
+#   portable update                      -> update the installed copy from GitHub
 #   portable secret set NAME             -> store a secret in the Keychain (e.g. ANTHROPIC_API_KEY)
 #   portable secret rm NAME              -> remove it
 set -euo pipefail
@@ -23,6 +24,7 @@ PORTABLE_ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
 . "$PORTABLE_ROOT/lib/aws.sh"
 . "$PORTABLE_ROOT/lib/launch.sh"
 . "$PORTABLE_ROOT/lib/doctor.sh"
+. "$PORTABLE_ROOT/lib/update.sh"
 
 case "${1:-}" in
   secret)
@@ -34,6 +36,7 @@ case "${1:-}" in
     exit ;;
   ps) list_containers; exit ;;
   doctor) run_doctor; exit ;;
+  update) update_portable; exit ;;
   stop)
     [ -n "${2:-}" ] || { echo "usage: portable stop NAME" >&2; exit 2; }
     stop_container "$2"

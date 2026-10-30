@@ -21,10 +21,10 @@ doctor_prerequisites() {
   fi
   doctor_ok "Docker is running"
 
-  if [ -f "$PORTABLE_ROOT/.env" ]; then
-    doctor_ok "settings file .env found"
+  if [ -f "$PORTABLE_ENV_FILE" ]; then
+    doctor_ok "settings file $PORTABLE_ENV_FILE found"
   else
-    doctor_warn "no settings file .env, so defaults are used (run install.sh to create it)"
+    doctor_warn "no settings file $PORTABLE_ENV_FILE, so defaults are used (run install.sh to create it)"
   fi
   # load_settings exits on a bad workspace, so try it in a subshell first to report why.
   if ! error="$( (load_settings) 2>&1 >/dev/null)"; then
@@ -40,6 +40,18 @@ doctor_host() {
     doctor_ok "portable is on your PATH"
   else
     doctor_warn "portable isn't on your PATH; run install.sh and open a new terminal"
+  fi
+  local installed behind
+  installed="$(cd -P "$PORTABLE_INSTALL_DIR" 2>/dev/null && pwd)" || true
+  if [ "$PORTABLE_ROOT" != "$installed" ]; then
+    doctor_warn "running the working copy in $PORTABLE_ROOT, not the installed one; fine for testing changes"
+  # macOS has no `timeout`; this gives up on a connection slower than 1 byte/s for 10s.
+  elif ! git -C "$PORTABLE_ROOT" -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 fetch --quiet 2>/dev/null; then
+    doctor_warn "couldn't check GitHub for portable updates (offline?)"
+  elif behind="$(git -C "$PORTABLE_ROOT" rev-list --count 'HEAD..@{u}' 2>/dev/null)" && [ "$behind" -gt 0 ]; then
+    doctor_warn "portable is $behind commit(s) behind GitHub; run 'portable update'"
+  else
+    doctor_ok "portable is installed in $PORTABLE_ROOT and up to date"
   fi
 
   if secret_get CLAUDE_CODE_OAUTH_TOKEN >/dev/null || secret_get ANTHROPIC_API_KEY >/dev/null; then
@@ -79,7 +91,9 @@ run_doctor() {
     doctor_host
     echo
     # Fresh container, so the checks see exactly what a normal start gives.
-    (run_container "doctor-$(printf '%04x' $((RANDOM % 65536)))" portable-doctor) || doctor_failed=1
+    # From the current folder when a session could start there, else from all of WORKSPACE_DIR.
+    (session_folder >/dev/null 2>&1 || cd "$WORKSPACE_DIR"
+      run_container "doctor-$(printf '%04x' $((RANDOM % 65536)))" portable-doctor) || doctor_failed=1
   fi
   echo
   if [ "$doctor_failed" = 0 ]; then

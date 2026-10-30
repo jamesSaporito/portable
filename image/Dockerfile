@@ -81,8 +81,10 @@ COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/ /usr/local/libexec/docker/cli-plugins/
 
 # git over HTTPS to GitHub gets its credentials from gh, which reads GH_TOKEN from the environment.
+# The configuration repo's clone is root's (entrypoint.sh), so dev's git needs it marked safe to read.
 RUN git config --system credential.https://github.com.helper '!gh auth git-credential' \
- && git config --system credential.https://gist.github.com.helper '!gh auth git-credential'
+ && git config --system credential.https://gist.github.com.helper '!gh auth git-credential' \
+ && git config --system --add safe.directory /home/dev/claude-configuration
 
 # Reuse the base image's uid 1000 user, renamed to `dev`. No sudo.
 RUN usermod -l dev -d /home/dev -m node \

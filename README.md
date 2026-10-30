@@ -10,8 +10,8 @@ Secrets never go into the image. They stay in your Mac's Keychain and are passed
 
 | | Inside the container |
 |---|---|
-| Your files | Only the workspace folder (`WORKSPACE_DIR`, default `~/Projects/sandboxed`), mounted at the same path it has on your Mac (e.g. `/Users/you/Projects/sandboxed`), so paths match on both sides. Nothing else on your Mac: no home folder, `~/.ssh`, `~/.aws` or Docker socket. The folders above the workspace exist only as empty folders |
-| Docker | portable's own engine (see [Docker](#docker)). Containers it starts see the same workspace folder and nothing else on your Mac. Their published ports are on `localhost` |
+| Your files | Only the folder you run `portable` in, which must be your workspace folder (`WORKSPACE_DIR`, default `~/Projects/sandboxed`) or a folder inside it (see [Choosing what Claude can see](#choosing-what-claude-can-see)). It's mounted at the same path it has on your Mac (e.g. `/Users/you/Projects/sandboxed/my-app`), so paths match on both sides. Nothing else on your Mac: no home folder, `~/.ssh`, `~/.aws` or Docker socket. The folders above it exist only as empty folders. Your Claude configuration repo stays hidden even when it's inside it |
+| Docker | portable's own engine (see [Docker](#docker)). Containers it starts see the whole workspace folder (minus the hidden folders) and nothing else on your Mac. Their published ports are on `localhost` |
 | Claude | Your subscription token or API key, from the Keychain |
 | GitHub | A fine-grained token from the Keychain, limited to the repos you choose. git uses it over HTTPS |
 | AWS | Temporary credentials (about 1 hour) made from an AWS profile on your Mac. Your SSO login stays on the Mac |
@@ -40,7 +40,7 @@ Its limits:
 
 Claude runs Docker against portable's own engine, a second container (`portable-engine`) that runs `docker:dind`, the official Docker-in-Docker image. Every session shares it, the way several terminals share Docker on your Mac. It starts with the first `portable` and keeps running, with whatever Claude started, after sessions end.
 
-- **Files:** the engine mounts the workspace folder at its Mac path, so bind mounts in a project's compose file (`./src:/app`) work unchanged.
+- **Files:** the engine mounts the whole workspace folder at its Mac path, so bind mounts in a project's compose file (`./src:/app`) work unchanged, whichever folder a session started in. That also means Claude can reach the whole workspace folder through Docker, even from a session started further in; `image/claude-instructions.md` tells it to stay in its own folder unless you ask.
 - **Ports:** the container shares the engine's network, so a port a project publishes is on `localhost`, as on your Mac. To open them on your Mac too, list them in `PORTABLE_PORTS`: the engine publishes each one on your Mac's `127.0.0.1` with the same number, so built-in `localhost` URLs work in your browser and TablePlus. It holds them while it runs, so the Mac can't use them for anything else, such as the same project run on the Mac, and the engine won't start if one is already taken. A changed list applies when no session is running.
 - **Data:** images, containers and their volumes (databases, for example) are kept in the `portable_docker-data` volume, so they survive restarts.
 - **Updates:** when the engine's image or settings change, it's recreated at the next `portable` with no other session running, since recreating it cuts running sessions off the network. Containers it was running stop then; those with a restart policy (e.g. `restart: unless-stopped`) come back. Until then `portable` says an update is waiting.
@@ -68,11 +68,12 @@ cd ~/path/to/this/repo
 
 `install.sh` is safe to re-run. It:
 
-1. Checks that Docker is installed and running.
-2. Links the `portable` command into `~/.local/bin` and adds that folder to your PATH in `~/.zshrc`.
-3. Creates `.env` from `.env.example` if there isn't one.
-4. Builds the images. The first build takes a few minutes.
-5. Asks for any missing secrets (steps 2 and 3 below). You can skip them and add them later.
+1. Installs portable in `~/.local/share/portable`, a clone of the same GitHub repo, and continues with that copy. That's the copy `portable` runs, kept outside any workspace, so the clone you started from can be worked on in portable like any other project (see [Changing portable itself](#changing-portable-itself)). Settings left in the clone's `.env` move to `~/.config/portable/.env`.
+2. Checks that Docker is installed and running.
+3. Links the `portable` command into `~/.local/bin` and adds that folder to your PATH in `~/.zshrc`.
+4. Creates `~/.config/portable/.env` from `.env.example` if there isn't one.
+5. Builds the images. The first build takes a few minutes.
+6. Asks for any missing secrets (steps 2 and 3 below). You can skip them and add them later.
 
 Open a **new terminal** afterwards so `portable` is on your PATH.
 
@@ -117,11 +118,11 @@ A fine-grained token can reach one owner only (your account or one organization)
 
 ### 4. Settings (`.env`)
 
-Edit `~/Projects/portable/.env`. A value set in your shell takes precedence over `.env`.
+Edit `~/.config/portable/.env`. Every copy of portable uses it, the installed one and any clone you run directly. A value set in your shell takes precedence over it.
 
 | Setting | What it does |
 |---|---|
-| `WORKSPACE_DIR` | The only Mac folder the container sees. `portable` refuses to start if it's `/`, your home folder, this project, a folder containing this project, or a path that would cover a system folder in the container (`/usr`, `/etc`, …) |
+| `WORKSPACE_DIR` | The most the container can see: all your projects, e.g. `~/Projects`. Each session sees only the folder it's started in, here or below (see [Choosing what Claude can see](#choosing-what-claude-can-see)). `portable` refuses to start if it's `/`, your home folder, inside this project or your Claude configuration repo, or a path that would cover a system folder in the container (`/usr`, `/etc`, …) |
 | `PORTABLE_AWS_PROFILE` | The AWS profile on your Mac to use, e.g. `default` or `Terraform`. Leave unset for no AWS access |
 | `PORTABLE_CLAUDE_CONFIG_REPO` | Your Claude configuration repo. Cloned on first start and installed with its own `install.sh` |
 | `PORTABLE_CLAUDE_CONFIG_DISABLE` | Skills or rules to turn off in the container, separated by spaces. Lines naming them are removed from the container's `CLAUDE.md` and rules |
@@ -148,7 +149,18 @@ portable claude     # Claude Code in the container
 portable <command>  # any command, e.g. portable terraform plan
 ```
 
-When you run `portable` from inside your workspace folder, the container starts in the matching subfolder.
+### Choosing what Claude can see
+
+A session sees only the folder you run `portable` in, which has to be your workspace folder or a folder inside it. Change folders to change how much Claude can reach:
+
+```sh
+cd ~/Projects && portable claude          # every project
+cd ~/Projects/my-app && portable claude   # only my-app
+```
+
+Run from anywhere else, `portable` refuses to start. The configuration repo your Mac's `~/.claude` links to stays hidden (empty and read-only) even when it's inside the folder you start in, in the session and in the Docker engine, so the sandbox can't change what your Mac's Claude runs. You can't start a session inside it. The copy of portable that's running is hidden the same way, so the sandbox can't rewrite its own launcher; the installed copy lives outside any workspace, so that only matters when you run a clone directly.
+
+The Docker engine is shared by every session, so it sees the whole workspace folder. Claude could reach other projects by starting a container with one mounted; it's told not to unless you ask (see [Docker](#docker)).
 
 The first time Claude opens a folder, it asks whether you trust it. That prompt is left on purpose.
 
@@ -158,7 +170,7 @@ The first time Claude opens a folder, it asks whether you trust it. That prompt 
 
 - **One-off command:** type it after `!` in Claude, e.g. `! docker compose ps`. It runs in the container and the output lands in the conversation.
 - **A shell you can switch to:** start with `portable`, then run `claude` from that shell. Ctrl+Z now drops you to the container's shell, and `fg` brings Claude back. `portable ps` lists the session's command as `bash`.
-- **A second terminal:** run `portable` in another tab. It's a separate container, but it has the same workspace and Docker engine, so it sees the same projects.
+- **A second terminal:** run `portable` in another tab. It's a separate container, but it has the same Docker engine, and the same folder if you start it in the same one.
 
 ### Running several agents
 
@@ -194,13 +206,40 @@ Each time you run `portable`:
 
 - **Images:** they're rebuilt only if something in `image/` changed since the last build. When several launches start together, one builds and the others wait.
 - **Docker engine:** it's started if it isn't running, and `portable` waits until it's ready.
-- **Claude configuration repo:** it's updated when the remote has new commits. If the update fails (offline, or local edits), the existing copy is used. Containers starting at the same time take turns with this setup, so no agent starts with half-updated files.
+- **Claude configuration repo:** it's updated when the remote has new commits. If it can't be reached (offline), the existing copy is used. Containers starting at the same time take turns with this setup, so no agent starts with half-updated files. The copy is read-only inside the container, so a session can't edit it and block later updates (see [Changing your Claude configuration](#changing-your-claude-configuration)).
 - **Mac settings:** your Mac's `~/.claude/settings.json` is merged in, and the Mac's values win. Mac-only entries are stripped first:
   - Hooks, the status line and credential helpers are dropped entirely, since they run Mac commands.
   - Any other value that mentions a macOS path (`/Users/...`, `/opt/homebrew/...`, `/Applications/...` and similar) is removed. For example, `Read(/Users/you/...)` is dropped from a permissions list while the other rules stay.
 - **Claude's first-run screens** (theme, welcome) are skipped.
 
 Claude's history and settings are kept in the `portable_claude-state` Docker volume, the configuration repo in `portable_claude-configuration`, and the engine's data in `portable_docker-data`.
+
+### Changing your Claude configuration
+
+The container never sees the configuration repo on your Mac (it's hidden even inside the workspace folder), so changes go through GitHub:
+
+1. Work in a separate clone, e.g. `~/Projects/claude-configuration-portable` (clone it on your Mac, or let Claude clone it in the container), make the change, and push a branch or open a PR. `image/claude-instructions.md` tells Claude to do this. `portable` refuses to start in your Mac's clone and prints the clone command.
+2. Merge it.
+3. On your Mac, run `git pull` in your clone (plus `./install.sh` if a skill or rule was added or removed), then start new Claude sessions.
+4. The next `portable` start picks it up in the container.
+
+That's on purpose: code in the container could otherwise change the skills and rules your Mac's Claude runs, outside the sandbox.
+
+Copies of the repo from before it was read-only may still have changes made in them. The next update saves those to `~/.claude/backups/claude-configuration-leftovers/` in the container, and says so, before replacing them.
+
+## Updating portable
+
+```sh
+portable update
+```
+
+Lists the new commits on GitHub and moves the installed copy forward to them. It refuses if the installed copy has changes of its own; make changes in a clone instead. The images rebuild at the next start if `image/` changed. `portable doctor` warns when an update is waiting.
+
+### Changing portable itself
+
+Work in a clone in your workspace folder (e.g. `~/Projects/portable`), in portable like any other project, and merge the change on GitHub. Then `portable update` brings it to the installed copy. Nothing a session writes reaches the launcher you run until you've merged it.
+
+To try a change before merging, run the clone directly on your Mac, e.g. `~/Projects/portable/bin/portable doctor` (`portable doctor` warns that it's not the installed copy). That runs outside the sandbox, so read what a session changed first, as you would a pull request. Both copies build the same image names, so switching between them rebuilds the images.
 
 ## Updating tool versions
 
@@ -216,11 +255,11 @@ portable doctor
 
 It checks your Mac first: Docker, `.env`, the workspace folder, the Keychain secrets, the AWS profile and whether the image is current. Then it starts a fresh container and checks:
 
-- **Sandbox:** the container runs as an ordinary user without admin rights, can't control Docker on your Mac, and can edit files in your workspace folder.
+- **Sandbox:** the container runs as an ordinary user without admin rights, can't control Docker on your Mac, can edit files in the folder it started in, and can't see the hidden folders.
 - **Tools:** the versions of Claude Code, git, gh, the AWS CLI, Terraform, pnpm, Docker and Compose.
-- **Claude configuration:** your skills, rules and `CLAUDE.md` are installed, portable's `/start` and `/stop` skills are there, and your Mac's Claude settings are copied in without the Mac-only parts.
+- **Claude configuration:** your skills, rules and `CLAUDE.md` are installed and up to date, their copy is read-only, portable's `/start` and `/stop` skills are there, and your Mac's Claude settings are copied in without the Mac-only parts.
 - **Access:** Claude answers a one-line prompt, GitHub accepts the token, and AWS answers `sts get-caller-identity` when a profile is set.
-- **Docker:** `docker` reaches portable's engine (not your Mac's), which can pull from Docker Hub. Containers it starts see your workspace and nothing else on your Mac, and their ports are on `localhost`.
+- **Docker:** `docker` reaches portable's engine (not your Mac's), which can pull from Docker Hub. Containers it starts see your workspace folder, without the hidden folders, and nothing else on your Mac, and their ports are on `localhost`.
 - **Firewall:** sites on its list (npm, the Terraform registry) are reachable and other sites are blocked, from the container and from containers Docker starts.
 
 Each line says `ok`, `warn`, `skip` or `FAIL`, and the command exits non-zero if anything failed. The Claude check sends a tiny prompt, so it uses a few tokens.
@@ -234,7 +273,11 @@ One thing it can't check without changing a repo: pushing. Push a branch to a re
 | `no Claude credential in the Keychain` | Step 2 |
 | `no GitHub token` | Step 3 |
 | `couldn't clone ... (does GH_TOKEN include it?)` | Add the configuration repo to your token's repository access |
-| `WORKSPACE_DIR (...) contains this project`, `is too broad` or `would cover a system folder` | Point `WORKSPACE_DIR` in `.env` at a dedicated folder |
+| `your Claude configuration is ... behind GitHub` | Run `portable` and read the `portable:` messages at start. `couldn't update ... (offline?)` means GitHub couldn't be reached |
+| `WORKSPACE_DIR (...) is inside portable ...`, `is too broad` or `would cover a system folder` | Point `WORKSPACE_DIR` in `.env` at a dedicated folder |
+| `run it from WORKSPACE_DIR (...) or a folder in it` | `cd` into a project in your workspace folder first. `portable doctor` works from anywhere |
+| `... is the copy of portable that's running` | You ran a clone of portable directly from inside itself. Use the installed `portable` to work on the clone |
+| `... is your Claude configuration repo` | It's hidden on purpose. Work in a separate clone, as the message shows (see [Changing your Claude configuration](#changing-your-claude-configuration)) |
 | `couldn't get AWS credentials for profile ...` | Run `aws sso login --profile <name>` on your Mac and check the profile name in `.env` |
 | `Docker isn't running` | Start Docker Desktop |
 | `container portable-engine exited` or `is unhealthy` | Run `docker logs portable-engine` on your Mac. `couldn't set up the firewall` there usually means you were offline at start (GitHub's and AWS's ranges are fetched then). Retry, or set `PORTABLE_FIREWALL=off` |
@@ -255,5 +298,6 @@ It's safe to re-run. It:
 4. Asks whether to delete the images.
 5. Asks whether to delete your secrets from the Keychain. You'd need new tokens to reinstall.
 6. Removes the `portable` command and the PATH lines `install.sh` added to `~/.zshrc` (a backup is saved as `~/.zshrc.portable-backup`). The PATH line stays if other programs are in `~/.local/bin`.
+7. Asks whether to delete the installed copy (`~/.local/share/portable`) and your settings (`~/.config/portable/.env`).
 
-`./uninstall.sh --yes` answers yes to everything. It never touches your workspace folder, this project folder or other projects' containers; delete the folders yourself if you want.
+`./uninstall.sh --yes` answers yes to everything. It never touches your workspace folder, clones of portable in it or other projects' containers; delete the folders yourself if you want.

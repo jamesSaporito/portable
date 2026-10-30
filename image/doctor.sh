@@ -36,6 +36,19 @@ check_sandbox() {
   else
     fail "can see your workspace folder $WORKSPACE_DIR but can't edit files in it"
   fi
+  local hidden
+  for hidden in $(hidden_in "$WORKSPACE_DIR"); do
+    if [ -d "$hidden" ] && [ -z "$(ls -A "$hidden")" ]; then ok "can't see $hidden, which is hidden from it"
+    else fail "can see $hidden, which should be hidden from it"; fi
+  done
+}
+
+# The hidden folders (lib/launch.sh) inside folder $1, where they'd otherwise be visible.
+hidden_in() {
+  local hidden
+  for hidden in "${PORTABLE_HIDE_SELF:-}" "${PORTABLE_HIDE_CONFIG:-}"; do
+    case "$hidden" in "$1"/*) echo "$hidden" ;; esac
+  done
 }
 
 check_tools() {
@@ -67,6 +80,17 @@ check_claude_config() {
     fail "your Claude configuration repo was downloaded but not installed (its install.sh didn't link CLAUDE.md)"
   else
     ok "your skills, rules and CLAUDE.md are installed (last change $(git -C "$dir" log -1 --format='%cr'))"
+    # The entrypoint fetched moments ago, so being behind means its update failed.
+    local behind
+    behind="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null)"
+    if [ "${behind:-0}" -gt 0 ]; then
+      fail "your Claude configuration is $behind commit(s) behind GitHub; the update failed (see the messages above)"
+    fi
+    if [ -w "$dir" ] || [ -w "$dir/CLAUDE.md" ]; then
+      fail "your Claude configuration's copy can be edited from in here, so a session's edits could block updates"
+    else
+      ok "your Claude configuration's copy is read-only in here (changes go through GitHub)"
+    fi
     # Silent when it worked; the filtering is an internal detail (see entrypoint.sh).
     for name in ${PORTABLE_CLAUDE_CONFIG_DISABLE:-}; do
       grep -q "\`$name\`" "$dir/CLAUDE.md" "$dir"/rules/*.md 2>/dev/null \
@@ -169,13 +193,25 @@ check_docker() {
     fail "containers it starts can't see your workspace folder at $WORKSPACE_DIR"
   fi
   rm -f "$probe"
-  # The folders above the workspace exist in the engine only as the path to it.
-  if [ "$(in_container -v "$(dirname "$WORKSPACE_DIR"):/p:ro" "$test_image" ls -A /p 2>/dev/null)" \
-      = "$(basename "$WORKSPACE_DIR")" ]; then
-    ok "containers it starts can't see anything else on your Mac"
+  # The engine has all of WORKSPACE_DIR, whichever folder this session started in. The folders above
+  # it exist in the engine only as the path to it.
+  local root="${PORTABLE_WORKSPACE_ROOT:-$WORKSPACE_DIR}" hidden
+  if [ "$(in_container -v "$(dirname "$root"):/p:ro" "$test_image" ls -A /p 2>/dev/null)" \
+      = "$(basename "$root")" ]; then
+    ok "containers it starts can't see anything on your Mac outside $root"
   else
-    fail "containers it starts can see folders next to your workspace, outside it"
+    fail "containers it starts can see folders next to $root, outside it"
   fi
+  # Through the whole folder, as a project's bind mount would reach them.
+  local listing
+  for hidden in $(hidden_in "$root"); do
+    if listing="$(in_container -v "$root:/w:ro" "$test_image" ls -A "/w/${hidden#"$root"/}" 2>/dev/null)" \
+      && [ -z "$listing" ]; then
+      ok "containers it starts can't see $hidden, which is hidden from them"
+    else
+      fail "containers it starts can see $hidden, which should be hidden from them"
+    fi
+  done
 
   id="$(docker run -d -p 127.0.0.1::8080 "$test_image" \
     sh -c 'while true; do printf "HTTP/1.0 200 OK\r\n\r\nportable" | nc -l -p 8080; done' 2>/dev/null)"

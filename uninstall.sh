@@ -7,7 +7,8 @@
 #   4. asks to delete the images
 #   5. asks to delete the secrets in the Keychain
 #   6. removes the `portable` command and the PATH lines install.sh added
-# Never touches the workspace folder, this project folder or other projects' containers.
+#   7. asks to delete the installed copy (~/.local/share/portable) and the settings file
+# Never touches the workspace folder, clones of portable in it or other projects' containers.
 set -euo pipefail
 
 PORTABLE_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,8 +32,11 @@ ask() {
   [[ "$reply" =~ ^[Yy] ]]
 }
 
-# compose.yaml requires WORKSPACE_DIR, though removing things never uses it.
-compose() { WORKSPACE_DIR=/nonexistent docker compose -f "$PORTABLE_ROOT/compose.yaml" "$@"; }
+# compose.yaml requires these folders, though removing things never uses them.
+compose() {
+  WORKSPACE_DIR=/nonexistent PORTABLE_SESSION_DIR=/nonexistent PORTABLE_HIDE_SELF=/nonexistent/a \
+    PORTABLE_HIDE_CONFIG=/nonexistent/b docker compose -f "$PORTABLE_ROOT/compose.yaml" "$@"
+}
 
 remove_docker() {
   if ! command -v docker >/dev/null || ! docker info >/dev/null 2>&1; then
@@ -94,11 +98,12 @@ remove_secrets() {
 
 remove_command() {
   local link="$bin_dir/portable"
-  # Only the link install.sh made, pointing at this copy of the project.
-  if [ -L "$link" ] && [ "$(readlink "$link")" = "$PORTABLE_ROOT/bin/portable" ]; then
-    rm "$link"
-    echo "Removed $link"
-  fi
+  # Only the link install.sh made: to the installed copy, or to a clone from before there was one.
+  case "$(readlink "$link" 2>/dev/null)" in
+    "$PORTABLE_INSTALL_DIR/bin/portable" | "$PORTABLE_ROOT/bin/portable")
+      rm "$link"
+      echo "Removed $link" ;;
+  esac
   rmdir "$bin_dir" 2>/dev/null || true
   rmdir "$PORTABLE_ROOT/.build.lock" 2>/dev/null || true
 
@@ -121,7 +126,24 @@ remove_command() {
   done
 }
 
+remove_install() {
+  if [ -d "$PORTABLE_INSTALL_DIR" ]; then
+    [ -z "$(git -C "$PORTABLE_INSTALL_DIR" status --porcelain 2>/dev/null)" ] \
+      || echo "Note: $PORTABLE_INSTALL_DIR has changes that aren't on GitHub."
+    if ask "Delete the installed copy of portable in $PORTABLE_INSTALL_DIR? A reinstall clones it again."; then
+      rm -rf "$PORTABLE_INSTALL_DIR"
+      echo "Deleted $PORTABLE_INSTALL_DIR"
+    fi
+  fi
+  if [ -f "$PORTABLE_ENV_FILE" ] && ask "Delete your settings in $PORTABLE_ENV_FILE?"; then
+    rm "$PORTABLE_ENV_FILE"
+    rmdir "$(dirname "$PORTABLE_ENV_FILE")" 2>/dev/null || true
+    echo "Deleted $PORTABLE_ENV_FILE"
+  fi
+}
+
 remove_docker
 remove_secrets
 remove_command
-echo "Done. Your workspace folder and this project folder ($PORTABLE_ROOT) were left in place; delete them yourself if you want."
+remove_install
+echo "Done. Your workspace folder and any clones of portable in it were left in place; delete them yourself if you want."
