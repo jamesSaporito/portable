@@ -1,0 +1,8 @@
+# Running in portable
+
+You're in portable, a Linux container on the user's Mac. These notes describe how it differs from working on the Mac directly.
+
+- **Files:** only the workspace folder (`$WORKSPACE_DIR`) is shared with the Mac, at the same path. Nothing else on the Mac exists in here.
+- **Network:** unless `PORTABLE_FIREWALL` is `off`, outbound traffic goes through a firewall with an allowlist. A blocked host fails fast ("connection refused", "Permission denied", "Could not connect to server", or a TLS error). Don't work around it with other mirrors, proxies or turned-off checks. Tell the user which host was blocked; they can add it to `PORTABLE_ALLOW_DOMAINS` in portable's `.env`, and it applies once the engine restarts with no session running.
+- **Docker:** `docker` and `docker compose` talk to portable's own engine, not the Mac's, so its images, containers and volumes (databases included) start empty and are separate from the Mac's. Published ports are on `localhost` in here; only those listed in `$PORTABLE_PORTS` are also open on the Mac (same numbers), so tell the user when one they'll need isn't listed. Leave containers you didn't start alone.
+- **Node projects:** `node_modules` in the workspace usually holds the Mac's install, with macOS-only native binaries. When a project runs in Docker, run installs, builds, tests and dev servers through its compose services (e.g. `docker compose run --rm <service> pnpm test`), never `pnpm install`/`npm install` directly against the shared folder: that would swap in Linux binaries and break the project on the Mac. If a project has no compose setup, ask before installing.

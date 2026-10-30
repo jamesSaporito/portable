@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Runs a command in the sandboxed dev container, or a shell when given none.
+#   portable [--name NAME] [command]    -> bash (or the command) in a new container
+#   portable claude                      -> Claude Code in the container
+#   portable claude --worktree NAME      -> Claude in its own git worktree; container named NAME
+#   portable ps                          -> list running containers
+#   portable stop NAME                   -> stop one
+#   portable doctor                      -> check the setup, on the Mac and in a container
+#   portable secret set NAME             -> store a secret in the Keychain (e.g. ANTHROPIC_API_KEY)
+#   portable secret rm NAME              -> remove it
+set -euo pipefail
+
+# Resolve symlinks so this works when linked onto PATH.
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+PORTABLE_ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+. "$PORTABLE_ROOT/lib/secrets.sh"
+. "$PORTABLE_ROOT/lib/aws.sh"
+. "$PORTABLE_ROOT/lib/launch.sh"
+. "$PORTABLE_ROOT/lib/doctor.sh"
+
+case "${1:-}" in
+  secret)
+    case "${2:-}:${3:-}" in
+      set:?*) secret_set "$3" ;;
+      rm:?*) secret_delete "$3" ;;
+      *) echo "usage: portable secret set|rm NAME" >&2; exit 2 ;;
+    esac
+    exit ;;
+  ps) list_containers; exit ;;
+  doctor) run_doctor; exit ;;
+  stop)
+    [ -n "${2:-}" ] || { echo "usage: portable stop NAME" >&2; exit 2; }
+    stop_container "$2"
+    exit ;;
+esac
+
+name=""
+if [ "${1:-}" = --name ]; then
+  [ -n "${2:-}" ] || { echo "usage: portable --name NAME [command]" >&2; exit 2; }
+  name="$2"
+  shift 2
+fi
+run_container "$name" "$@"
