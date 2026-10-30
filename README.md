@@ -158,7 +158,7 @@ cd ~/Projects && portable claude          # every project
 cd ~/Projects/my-app && portable claude   # only my-app
 ```
 
-Run from anywhere else, `portable` refuses to start. The configuration repo your Mac's `~/.claude` links to stays hidden (empty and read-only) even when it's inside the folder you start in, in the session and in the Docker engine, so the sandbox can't change what your Mac's Claude runs. You can't start a session inside it. The copy of portable that's running is hidden the same way, so the sandbox can't rewrite its own launcher; the installed copy lives outside any workspace, so that only matters when you run a clone directly.
+Run from anywhere else, `portable` refuses to start. The configuration repo your Mac's `~/.claude` links to stays hidden (empty and read-only) even when it's inside the folder you start in, in the session and in the Docker engine, so the sandbox can't change what your Mac's Claude runs. You can't start a session inside it. Its installed copy lives outside any workspace, so that only matters for installs from before it had one (see [Changing your Claude configuration](#changing-your-claude-configuration)). The copy of portable that's running is hidden the same way, so the sandbox can't rewrite its own launcher; the installed copy lives outside any workspace, so that only matters when you run a clone directly.
 
 The Docker engine is shared by every session, so it sees the whole workspace folder. Claude could reach other projects by starting a container with one mounted; it's told not to unless you ask (see [Docker](#docker)).
 
@@ -216,12 +216,14 @@ Claude's history and settings are kept in the `portable_claude-state` Docker vol
 
 ### Changing your Claude configuration
 
-The container never sees the configuration repo on your Mac (it's hidden even inside the workspace folder), so changes go through GitHub:
+Your Mac's `~/.claude` links into the configuration repo's installed copy in `~/.local/share/claude-configuration`, outside any workspace, so changes go through GitHub:
 
-1. Work in a separate clone, e.g. `~/Projects/claude-configuration-portable` (clone it on your Mac, or let Claude clone it in the container), make the change, and push a branch or open a PR. `image/claude-instructions.md` tells Claude to do this. `portable` refuses to start in your Mac's clone and prints the clone command.
+1. Work in a clone in your workspace folder, e.g. `~/Projects/claude-configuration` (or let Claude clone it in the container), make the change, and push a branch or open a PR. `image/claude-instructions.md` tells Claude to do this.
 2. Merge it.
-3. On your Mac, run `git pull` in your clone (plus `./install.sh` if a skill or rule was added or removed), then start new Claude sessions.
+3. On your Mac, run `./install.sh update` in your clone, then start new Claude sessions.
 4. The next `portable` start picks it up in the container.
+
+If `~/.claude` still links into a clone inside the workspace folder (installed before the configuration repo had an installed copy), that clone stays hidden and `portable` refuses to start in it. Run its `install.sh` once to switch to the installed copy.
 
 That's on purpose: code in the container could otherwise change the skills and rules your Mac's Claude runs, outside the sandbox.
 
@@ -277,7 +279,7 @@ One thing it can't check without changing a repo: pushing. Push a branch to a re
 | `WORKSPACE_DIR (...) is inside portable ...`, `is too broad` or `would cover a system folder` | Point `WORKSPACE_DIR` in `.env` at a dedicated folder |
 | `run it from WORKSPACE_DIR (...) or a folder in it` | `cd` into a project in your workspace folder first. `portable doctor` works from anywhere |
 | `... is the copy of portable that's running` | You ran a clone of portable directly from inside itself. Use the installed `portable` to work on the clone |
-| `... is your Claude configuration repo` | It's hidden on purpose. Work in a separate clone, as the message shows (see [Changing your Claude configuration](#changing-your-claude-configuration)) |
+| `... is your Claude configuration repo` | It's hidden on purpose. Run its `install.sh` to switch to its installed copy, as the message shows (see [Changing your Claude configuration](#changing-your-claude-configuration)) |
 | `couldn't get AWS credentials for profile ...` | Run `aws sso login --profile <name>` on your Mac and check the profile name in `.env` |
 | `Docker isn't running` | Start Docker Desktop |
 | `container portable-engine exited` or `is unhealthy` | Run `docker logs portable-engine` on your Mac. `couldn't set up the firewall` there usually means you were offline at start (GitHub's and AWS's ranges are fetched then). Retry, or set `PORTABLE_FIREWALL=off` |

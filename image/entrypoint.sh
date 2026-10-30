@@ -120,8 +120,9 @@ install_claude_config() {
   # rather than passing --disable: names removed from .env then come back on.
   local name
   for name in ${PORTABLE_CLAUDE_CONFIG_DISABLE:-}; do echo "$name"; done > "$state_dir/personal-disabled"
-  # Idempotent; stay quiet when nothing changed.
-  "$config_dir/install.sh" 2>&1 | grep -v '^Already up to date' >&2 || true
+  # Idempotent; stay quiet when nothing changed. This copy is the installed one: install.sh would
+  # otherwise make its own clone in ~/.local/share and link that instead.
+  CLAUDE_CONFIGURATION_DIR="$config_dir" "$config_dir/install.sh" 2>&1 | grep -v '^Already up to date' >&2 || true
 }
 
 # Merges the host's ~/.claude/settings.json (passed in by bin/portable) into the container's, host
