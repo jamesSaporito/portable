@@ -9,7 +9,7 @@ Runs the project's `docker compose up` through `bin/portable`, so it goes to por
 
 ## 1. Pick the project
 
-- Read the workspace folder from `WORKSPACE_DIR` in this repo's `.env` (only that line), expanding `~`. Default `~/Projects/sandboxed`.
+- Read the workspace folder from `WORKSPACE_DIR` in portable's settings, `~/.config/portable/.env` (only that line), expanding `~`.
 - If the user named a folder (`/start api`), use `$WORKSPACE_DIR/<folder>`.
 - Otherwise, if `$WORKSPACE_DIR` has a compose file (`compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`), use it.
 - Otherwise list the subfolders that have one and ask which. Stop if there are none.
@@ -34,4 +34,4 @@ cd "<project>" && portable docker compose up --build --detach
 cd "<project>" && portable docker compose ps --all
 ```
 
-Give each service's state, and flag any that exited non-zero (show the last lines of `portable docker compose logs <service>`). For each published port, say whether it's in `PORTABLE_PORTS` in `.env`: those open at `http://localhost:<port>` on the Mac; the others only inside portable. Suggest adding missing ones to `PORTABLE_PORTS` (applies when no session is running) rather than editing it yourself.
+Give each service's state, and flag any that exited non-zero (show the last lines of `portable docker compose logs <service>`). For each published port, say whether it's in `PORTABLE_PORTS` in `~/.config/portable/.env`: those open at `http://localhost:<port>` on the Mac; the others only inside portable. Suggest adding missing ones to `PORTABLE_PORTS` (applies when no session is running) rather than editing it yourself.

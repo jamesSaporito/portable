@@ -1,5 +1,11 @@
 # Prepares the environment and runs the dev container. Expects PORTABLE_ROOT and lib/secrets.sh.
 
+# The copy of portable that install.sh puts on PATH, a clone of its GitHub repo kept outside any
+# workspace, so sessions can work on a clone of portable without touching the launcher that runs them.
+# `portable update` moves it forward. Settings live outside both, so every copy shares them.
+PORTABLE_INSTALL_DIR="${PORTABLE_INSTALL_DIR:-$HOME/.local/share/portable}"
+PORTABLE_ENV_FILE="${PORTABLE_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/portable/.env}"
+
 # Secrets exported into compose's own environment and passed through by name (see compose.yaml),
 # so values never land in a file or on a command line.
 PORTABLE_SECRETS=(ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN GH_TOKEN)
@@ -7,21 +13,51 @@ PORTABLE_SECRETS=(ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN GH_TOKEN)
 load_settings() {
   # Read .env as plain KEY=VALUE lines (never executed). Like Compose, a value already set in the shell wins.
   local key value
-  if [ -f "$PORTABLE_ROOT/.env" ]; then
+  if [ -f "$PORTABLE_ENV_FILE" ]; then
     while IFS='=' read -r key value || [ -n "$key" ]; do
       case "$key" in ''|\#*) continue ;; esac
       [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
       [ -n "${!key:-}" ] || export "$key=$value"
-    done < "$PORTABLE_ROOT/.env"
+    done < "$PORTABLE_ENV_FILE"
   fi
+  # The most any session can see. Each one mounts the folder it's started in (session_folder), while
+  # the shared engine mounts all of it (see compose.yaml).
   export WORKSPACE_DIR="${WORKSPACE_DIR:-$HOME/Projects/sandboxed}"
   WORKSPACE_DIR="${WORKSPACE_DIR/#\~/$HOME}"
+  load_hidden
   check_workspace
   mkdir -p "$WORKSPACE_DIR"
-  # The folder is mounted at this same path inside the container (see compose.yaml), so paths that
+  # Folders are mounted at these same paths inside the containers (see compose.yaml), so paths that
   # tools record, such as git worktrees, work on both sides.
   WORKSPACE_DIR="$(cd -P "$WORKSPACE_DIR" && pwd)"
   check_workspace
+  # Hidden folders outside it need no cover, and covering them would leave empty folders next to it
+  # in the engine. Compose still needs a path, so these hide nothing.
+  case "$PORTABLE_HIDE_SELF/" in "$WORKSPACE_DIR"/*) ;; *) PORTABLE_HIDE_SELF=/tmp/.portable-nothing-hidden-self ;; esac
+  case "$PORTABLE_HIDE_CONFIG/" in "$WORKSPACE_DIR"/*) ;; *) PORTABLE_HIDE_CONFIG=/tmp/.portable-nothing-hidden-config ;; esac
+}
+
+# Folders covered with an empty, read-only one in the containers and the engine, even inside
+# WORKSPACE_DIR: the copy of portable that's running, or the container could rewrite its own launcher
+# and compose file and so widen its access on the next launch (the installed copy lives outside any
+# workspace, so this only matters for a working copy run directly), and the configuration repo the Mac's ~/.claude links into, or
+# it could change the skills and rules the Mac's Claude runs.
+load_hidden() {
+  export PORTABLE_HIDE_SELF="$PORTABLE_ROOT"
+  local link config=""
+  if link="$(readlink "$HOME/.claude/CLAUDE.md")"; then
+    [[ "$link" = /* ]] || link="$HOME/.claude/$link"
+    config="$(cd -P "$(dirname "$link")" 2>/dev/null && pwd)"
+  fi
+  export PORTABLE_HIDE_CONFIG="${config:-/tmp/.portable-nothing-hidden-config}"
+}
+
+# A hidden folder or one inside it can't be mounted: its real files would cover the empty one again.
+inside_hidden() {
+  case "$1/" in
+    "$PORTABLE_HIDE_SELF"/* | "$PORTABLE_HIDE_CONFIG"/*) return 0 ;;
+  esac
+  return 1
 }
 
 check_workspace() {
@@ -32,19 +68,41 @@ check_workspace() {
     echo "portable: WORKSPACE_DIR (${WORKSPACE_DIR}) is too broad; point it at a dedicated folder in .env" >&2
     exit 1
   fi
-  # Mounting this repo (or a folder containing it) would let the container rewrite its own
-  # launcher and compose file, and so widen its access on the next launch.
-  case "$PORTABLE_ROOT/" in
-    "$ws"/*)
-      echo "portable: WORKSPACE_DIR ($WORKSPACE_DIR) contains this project; point it at a separate folder in .env" >&2
-      exit 1 ;;
-  esac
+  if inside_hidden "$ws"; then
+    echo "portable: WORKSPACE_DIR ($WORKSPACE_DIR) is inside portable or your Claude configuration repo, which are hidden from the container; point it at another folder in .env" >&2
+    exit 1
+  fi
   # A Mac path never overlaps the container's own folders, but a custom one could hide them.
   case "$ws/" in
     /bin/*|/boot/*|/dev/*|/etc/*|/home/*|/lib*|/proc/*|/root/*|/run/*|/sbin/*|/srv/*|/sys/*|/usr/*|/var/*)
       echo "portable: WORKSPACE_DIR ($WORKSPACE_DIR) would cover a system folder in the container; pick another" >&2
       exit 1 ;;
   esac
+}
+
+# The folder a session shares, and starts in: the current one, which must be WORKSPACE_DIR or inside
+# it. Starting further in narrows what Claude can see.
+session_folder() {
+  local here
+  here="$(pwd -P)"
+  case "$here/" in
+    "$WORKSPACE_DIR"/*) ;;
+    *)
+      echo "portable: run it from WORKSPACE_DIR ($WORKSPACE_DIR) or a folder in it; the session can see only the folder it starts in" >&2
+      return 1 ;;
+  esac
+  case "$here/" in
+    "$PORTABLE_HIDE_SELF"/*)
+      echo "portable: $here is the copy of portable that's running, which is hidden from the container so it can't change its own launcher; to work on it in portable, run the installed 'portable' instead" >&2
+      return 1 ;;
+    "$PORTABLE_HIDE_CONFIG"/*)
+      echo "portable: $here is your Claude configuration repo, which is hidden from the container: your Mac's ~/.claude links into it, so the sandbox could change what your Mac's Claude runs." >&2
+      echo "  To work on it in portable, use a separate clone and go through GitHub:" >&2
+      echo "    git clone \"\$(git -C '$PORTABLE_HIDE_CONFIG' remote get-url origin)\" '$(dirname "$PORTABLE_HIDE_CONFIG")/$(basename "$PORTABLE_HIDE_CONFIG")-portable'" >&2
+      echo "  then push from there, and run 'git pull' here on your Mac once it's merged." >&2
+      return 1 ;;
+  esac
+  echo "$here"
 }
 
 load_secrets() {
@@ -74,16 +132,6 @@ load_git_identity() {
   local email="${GIT_EMAIL:-$(git config --global user.email 2>/dev/null || true)}"
   export GIT_AUTHOR_NAME="$name" GIT_COMMITTER_NAME="$name"
   export GIT_AUTHOR_EMAIL="$email" GIT_COMMITTER_EMAIL="$email"
-}
-
-# Starts in the current folder when run from inside the workspace on the host, else its root.
-container_workdir() {
-  local here
-  here="$(pwd -P)"
-  case "$here/" in
-    "$WORKSPACE_DIR"/*) echo "$here" ;;
-    *) echo "$WORKSPACE_DIR" ;;
-  esac
 }
 
 # Hash of image/, stamped on the dev image as a label when it's built.
@@ -224,7 +272,8 @@ run_container() {
   local name="$1" workdir
   shift
   load_settings
-  workdir="$(container_workdir)"
+  workdir="$(session_folder)" || exit 1
+  export PORTABLE_SESSION_DIR="$workdir"
   name="$(container_name "$name" "$workdir" "$@")" || exit 1
   ensure_image
   load_secrets
