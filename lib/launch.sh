@@ -97,9 +97,9 @@ session_folder() {
       return 1 ;;
     "$PORTABLE_HIDE_CONFIG"/*)
       echo "portable: $here is your Claude configuration repo, which is hidden from the container: your Mac's ~/.claude links into it, so the sandbox could change what your Mac's Claude runs." >&2
-      echo "  To work on it in portable, use a separate clone and go through GitHub:" >&2
-      echo "    git clone \"\$(git -C '$PORTABLE_HIDE_CONFIG' remote get-url origin)\" '$(dirname "$PORTABLE_HIDE_CONFIG")/$(basename "$PORTABLE_HIDE_CONFIG")-portable'" >&2
-      echo "  then push from there, and run 'git pull' here on your Mac once it's merged." >&2
+      echo "  To work on it in portable, run its installer, which links ~/.claude to a copy outside the workspace instead:" >&2
+      echo "    '$PORTABLE_HIDE_CONFIG/install.sh'" >&2
+      echo "  then push changes from here, and run './install.sh update' on your Mac once they're merged." >&2
       return 1 ;;
   esac
   echo "$here"
