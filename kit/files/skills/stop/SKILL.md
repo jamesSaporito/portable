@@ -1,11 +1,11 @@
 ---
 name: stop
-description: Stops a workspace project's Docker Compose stack in portable's Docker engine, keeping its data. Use when the user types /stop (optionally with a project folder), or asks to stop, shut down or bring down a project.
+description: Stops a workspace project's Docker Compose stack in this sandbox's Docker engine, keeping its data. Use when the user types /stop (optionally with a project folder), or asks to stop, shut down or bring down a project.
 ---
 
 # Stop a project
 
-Runs the project's `docker compose down` in portable's engine.
+Runs the project's `docker compose down` in the sandbox's engine.
 
 ## 1. Pick the project
 
@@ -31,4 +31,4 @@ cd "<project>" && docker compose down
 cd "<project>" && docker compose ps --all
 ```
 
-Confirm nothing is left, or list what still is.
+Confirm nothing is left, or list what still is. portable drops the Mac-side forwards of ports that went away within a few seconds (`/etc/portable/ports` loses their lines), so there's nothing to clean up on the Mac.
