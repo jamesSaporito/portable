@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # Undoes install.sh. Safe to re-run. Asks before anything you'd lose for good; --yes answers yes to all.
-#   1. stops and removes portable's containers, its Docker engine and network (asks first if any
-#      session is running)
-#   2. asks to delete Claude's history and settings in the container (Docker volumes)
-#   3. asks to delete what the engine holds: projects' images, containers and their data (a volume)
-#   4. asks to delete the images
-#   5. asks to delete the secrets in the Keychain
-#   6. removes the `portable` command and the PATH lines install.sh added
-#   7. asks to delete the installed copy (~/.local/share/portable) and the settings file
-# Never touches the workspace folder, clones of portable in it or other projects' containers.
+#   1. deletes portable's sandboxes (asks first; their Docker data and Claude history go with them)
+#   2. asks to remove the GitHub token and Infracost token sources from sbx
+#   3. asks to delete leftovers of the Docker-based portable (engine container, volumes, images), if
+#      Docker is still installed
+#   4. asks to delete the secrets in the Keychain
+#   5. removes the `portable` command and the PATH lines install.sh added
+#   6. asks to delete the installed copy (~/.local/share/portable) and the settings file
+# Never touches the workspace folder, clones of portable in it, other sandboxes or sbx itself
+# (brew uninstall sbx removes that).
 set -euo pipefail
 
 PORTABLE_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$PORTABLE_ROOT/lib/secrets.sh"
+. "$PORTABLE_ROOT/lib/aws.sh"
 . "$PORTABLE_ROOT/lib/launch.sh"
 
 bin_dir="$HOME/.local/bin"
@@ -32,61 +33,61 @@ ask() {
   [[ "$reply" =~ ^[Yy] ]]
 }
 
-# compose.yaml requires these folders, though removing things never uses them.
-compose() {
-  WORKSPACE_DIR=/nonexistent PORTABLE_SESSION_DIR=/nonexistent PORTABLE_HIDE_SELF=/nonexistent/a \
-    PORTABLE_HIDE_CONFIG=/nonexistent/b docker compose -f "$PORTABLE_ROOT/compose.yaml" "$@"
-}
-
-remove_docker() {
-  if ! command -v docker >/dev/null || ! docker info >/dev/null 2>&1; then
-    echo "Docker isn't running; skipping containers, volumes and the image. Start it and re-run to remove them."
+remove_sandboxes() {
+  if ! command -v sbx >/dev/null || ! sbx ls >/dev/null 2>&1; then
+    echo "sbx isn't installed or signed in; skipping sandboxes. Sign in (sbx login) and re-run to remove them."
     return
   fi
-
-  local running
-  running="$(docker ps -q --filter label=com.docker.compose.project=portable --filter label=portable.name)"
-  if [ -n "$running" ]; then
-    echo "These portable sessions are running; removing them ends them:"
+  if ! command -v jq >/dev/null; then
+    echo "jq isn't installed, so portable's sandboxes can't be listed; skipping them. Install it (brew install jq) and re-run, or delete them with sbx rm."
+    return
+  fi
+  local names name
+  names="$(sandboxes_json | jq -r '.[].name')"
+  if [ -n "$names" ]; then
+    echo "portable's sandboxes (deleting them removes their Docker data and Claude history; workspace files stay):"
     list_containers
-    ask "Stop and remove them?" || { echo "Left everything in place."; exit 1; }
-  fi
-  # Containers from `portable` (compose run) aren't removed by `down`, so remove them by label.
-  local all
-  all="$(docker ps -aq --filter label=com.docker.compose.project=portable)"
-  [ -z "$all" ] || docker rm -f $all >/dev/null
-  compose down --remove-orphans 2>/dev/null
-  echo "Removed portable's containers, Docker engine and network"
-
-  local volume
-  if [ -n "$(docker volume ls -q --filter name='^portable_claude-')" ] \
-    && ask "Delete Claude's history, settings and configuration clone in the container (Docker volumes)?"; then
-    for volume in portable_claude-state portable_claude-configuration; do
-      docker volume rm "$volume" >/dev/null 2>&1 || true
-    done
-    echo "Deleted Claude's volumes"
-  fi
-  if [ -n "$(docker volume ls -q --filter name='^portable_docker-')" ] \
-    && ask "Delete everything the portable Docker engine holds: projects' images, containers and their data (e.g. databases)?"; then
-    for volume in portable_docker-data portable_docker-certs; do
-      docker volume rm "$volume" >/dev/null 2>&1 || true
-    done
-    echo "Deleted the engine's volumes"
-  fi
-
-  local image
-  for image in portable-dev:local portable-engine:local; do
-    if docker image inspect "$image" >/dev/null 2>&1 \
-      && ask "Delete the image $image? A reinstall rebuilds it in a few minutes."; then
-      docker rmi "$image" >/dev/null
-      echo "Deleted $image"
+    if ask "Delete them?"; then
+      while IFS= read -r name; do
+        sbx rm --force "$name" >/dev/null && echo "Deleted ${name#portable-}"
+      done <<< "$names"
+    else
+      echo "Left the sandboxes in place."
     fi
+  fi
+  if sbx secret ls 2>/dev/null | grep -q 'github' && ask "Remove the GitHub token source from sbx?"; then
+    sbx secret rm github >/dev/null 2>&1 && echo "Removed it"
+  fi
+  if sbx secret ls 2>/dev/null | grep -q 'infracost' && ask "Remove the Infracost token source from sbx?"; then
+    sbx secret rm infracost >/dev/null 2>&1 && echo "Removed it"
+  fi
+}
+
+# The Docker-based portable (before the move to sandboxes) left an engine container, volumes and images.
+remove_old_docker() {
+  command -v docker >/dev/null && docker info >/dev/null 2>&1 || return 0
+  local containers volumes images
+  containers="$(docker ps -aq --filter label=com.docker.compose.project=portable 2>/dev/null || true)"
+  volumes="$(docker volume ls -q --filter name='^portable_' 2>/dev/null || true)"
+  local image
+  images=""
+  for image in portable-dev:local portable-engine:local; do
+    images="$images$(docker image ls -q "$image" 2>/dev/null || true) "
   done
+  images="${images// /}"
+  [ -n "$containers$volumes$images" ] || return 0
+  echo "Leftovers from the Docker-based portable were found in Docker Desktop."
+  if ask "Delete them (the old engine, its volumes with projects' data, and the images)?"; then
+    [ -z "$containers" ] || docker rm -f $containers >/dev/null
+    [ -z "$volumes" ] || docker volume rm $volumes >/dev/null 2>&1 || true
+    [ -z "$images" ] || docker rmi $images >/dev/null 2>&1 || true
+    echo "Deleted them"
+  fi
 }
 
 remove_secrets() {
   local name stored=()
-  for name in "${PORTABLE_SECRETS[@]}"; do
+  for name in "${PORTABLE_SECRETS[@]}" ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
     secret_get "$name" >/dev/null && stored+=("$name")
   done
   [ ${#stored[@]} -gt 0 ] || return 0
@@ -105,7 +106,6 @@ remove_command() {
       echo "Removed $link" ;;
   esac
   rmdir "$bin_dir" 2>/dev/null || true
-  rmdir "$PORTABLE_ROOT/.build.lock" 2>/dev/null || true
 
   local rc
   for rc in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
@@ -142,8 +142,9 @@ remove_install() {
   fi
 }
 
-remove_docker
+remove_sandboxes
+remove_old_docker
 remove_secrets
 remove_command
 remove_install
-echo "Done. Your workspace folder and any clones of portable in it were left in place; delete them yourself if you want."
+echo "Done. Your workspace folder and any clones of portable in it were left in place. sbx itself stays installed (brew uninstall sbx)."

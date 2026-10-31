@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# The sandbox half of `portable doctor` (lib/doctor.sh runs the Mac half, then this in a throwaway
+# sandbox). Prints one line per check and exits non-zero if any failed.
+set -uo pipefail
+
+failed=0
+# Set for Claude's sessions but not for `sbx exec`, where portable runs this.
+CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+ok()   { printf '  ok    %s\n' "$*"; }
+warn() { printf '  warn  %s\n' "$*"; }
+skip() { printf '  skip  %s\n' "$*"; }
+fail() { printf '  FAIL  %s\n' "$*"; failed=1; }
+
+# Exit status of an HTTPS request: 0 when the host answered at all, whatever the HTTP status.
+# The proxy decrypts HTTPS, so a blocked host still answers: with a 403 page pointing at
+# `sbx policy approval`. Only a reply without it means the host was let through.
+reachable() {
+  local body
+  body="$(curl -s --max-time 8 "https://$1" 2>/dev/null)" || return 1
+  ! grep -q 'sbx policy' <<< "$body"
+}
+
+check_sandbox() {
+  echo "Sandbox (the microVM)"
+  if [ "$(id -un)" = agent ]; then ok "runs as the ordinary user agent"
+  else fail "runs as $(id -un) instead of the ordinary user agent"; fi
+  if grep -qs '^flags.*hypervisor' /proc/cpuinfo || [ -d /sys/firmware/qemu_fw_cfg ] || grep -qsi 'virtual\|kvm\|qemu' /sys/class/dmi/id/product_name; then
+    ok "runs in a virtual machine with its own kernel ($(uname -r))"
+  else
+    warn "couldn't confirm a virtual machine (kernel $(uname -r)); sbx always uses one, so this is informational"
+  fi
+  if [ -S /var/run/docker.sock ] && [ "$(docker info --format '{{.Name}}' 2>/dev/null)" != "$(uname -n)" ]; then
+    warn "a Docker socket is present; check that it's the sandbox's own engine (Docker below)"
+  fi
+
+  local probe
+  if ! mountpoint -q "$WORKSPACE_DIR" 2>/dev/null && ! grep -qs " $WORKSPACE_DIR " /proc/mounts; then
+    fail "your workspace folder isn't shared with the sandbox at $WORKSPACE_DIR"
+  elif probe="$(mktemp -p "$WORKSPACE_DIR" .portable-doctor.XXXXXX 2>/dev/null)"; then
+    rm -f "$probe"
+    ok "sees your workspace folder $WORKSPACE_DIR and can edit files in it"
+  else
+    fail "can see your workspace folder $WORKSPACE_DIR but can't edit files in it"
+  fi
+  local parent
+  parent="$(dirname "$WORKSPACE_DIR")"
+  if [ "$(ls -A "$parent" 2>/dev/null)" = "$(basename "$WORKSPACE_DIR")" ]; then
+    ok "sees nothing else on your Mac (the folders above are only the path to it)"
+  else
+    fail "can see other folders next to $WORKSPACE_DIR: $(ls -A "$parent" 2>/dev/null | tr '\n' ' ')"
+  fi
+}
+
+check_secrets() {
+  echo "Credentials"
+  # The proxy holds the real values; the sandbox should only see placeholders.
+  local leak
+  leak="$(env | grep -E '(sk-ant-(api|oat)[0-9]*-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' | grep -v proxy-managed | cut -d= -f1)"
+  if [ -n "$leak" ]; then fail "a real token is readable in the sandbox's environment: $leak"
+  else ok "no real Claude or GitHub token is in the sandbox's environment (the proxy adds them)"; fi
+  if [ -z "${GH_TOKEN:-}" ]; then
+    fail "GitHub: no token was bound (store one with 'portable secret set GH_TOKEN', then recreate the sandbox)"
+  elif [ -f /etc/gitconfig ] && grep -q 'gh auth git-credential' /etc/gitconfig; then
+    ok "GitHub token is bound (GH_TOKEN is a placeholder) and git uses it through gh"
+  else
+    fail "GitHub token is bound but git isn't set up to use it (portable-setup install didn't run?)"
+  fi
+}
+
+check_tools() {
+  echo "Tools"
+  local tool version
+  for tool in claude git gh aws terraform infracost pnpm docker compose; do
+    case "$tool" in
+      claude) version="$(claude --version 2>/dev/null)" ;;
+      git) version="$(git --version 2>/dev/null)" ;;
+      gh) version="$(gh --version 2>/dev/null | head -1)" ;;
+      aws) version="$(aws --version 2>/dev/null | cut -d' ' -f1)" ;;
+      terraform) version="$(terraform version 2>/dev/null | head -1)" ;;
+      infracost) version="$(infracost version 2>/dev/null | head -1)" && version="infracost $version" ;;
+      pnpm) version="$(pnpm --version 2>/dev/null)" && version="pnpm $version" ;;
+      docker) version="$(docker --version 2>/dev/null)" ;;
+      compose) version="$(docker compose version 2>/dev/null)" ;;
+    esac
+    if [ -n "$version" ]; then ok "$version"; else fail "$tool doesn't run"; fi
+  done
+}
+
+check_claude_config() {
+  echo "Claude configuration"
+  local dir=/home/agent/claude-configuration name
+  if [ -z "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ]; then
+    skip "no Claude configuration repo set (PORTABLE_CLAUDE_CONFIG_REPO in .env)"
+  elif [ ! -d "$dir/.git" ]; then
+    fail "your Claude configuration repo couldn't be downloaded (does the GitHub token include it?)"
+  elif [ "$(readlink "$CLAUDE_CONFIG_DIR/CLAUDE.md" 2>/dev/null)" != "$dir/CLAUDE.md" ]; then
+    fail "your Claude configuration repo was downloaded but not installed (its install.sh didn't link CLAUDE.md)"
+  else
+    ok "your skills, rules and CLAUDE.md are installed (last change $(git -C "$dir" log -1 --format='%cr'))"
+    local behind
+    behind="$(timeout 20 git -C "$dir" fetch --quiet 2>/dev/null; git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null)"
+    if [ "${behind:-0}" -gt 0 ]; then
+      warn "your Claude configuration is $behind commit(s) behind GitHub; it updates at the next sandbox boot"
+    fi
+    if [ -w "$dir" ] || [ -w "$dir/CLAUDE.md" ]; then
+      fail "your Claude configuration's copy can be edited from in here, so a session's edits could block updates"
+    else
+      ok "your Claude configuration's copy is read-only in here (changes go through GitHub)"
+    fi
+    for name in ${PORTABLE_CLAUDE_CONFIG_DISABLE:-}; do
+      grep -q "\`$name\`" "$dir/CLAUDE.md" "$dir"/rules/*.md 2>/dev/null \
+        && fail "your CLAUDE.md or rules still tell Claude to use $name, which PORTABLE_CLAUDE_CONFIG_DISABLE turns off"
+    done
+  fi
+
+  local skill missing=""
+  for skill in start stop; do
+    [ -r "/etc/claude-code/.claude/skills/$skill/SKILL.md" ] || missing="$missing /$skill"
+  done
+  if [ -z "$missing" ]; then ok "portable's own skills (/start, /stop) and managed CLAUDE.md are installed"
+  else fail "portable's own skills are missing or unreadable:$missing"; fi
+  [ -r /etc/claude-code/CLAUDE.md ] || fail "portable's managed CLAUDE.md is missing"
+
+  local settings="$CLAUDE_CONFIG_DIR/settings.json"
+  if [ ! -f "$settings" ]; then
+    skip "no Claude settings file in the sandbox"
+  elif ! jq empty "$settings" 2>/dev/null; then
+    fail "the sandbox's Claude settings are broken (settings.json isn't valid JSON)"
+  elif jq -e '[.. | strings] | any(test("(^|[^A-Za-z0-9_.-])(/Users|/opt/homebrew|/Applications)(/|$)"))' "$settings" >/dev/null 2>&1; then
+    fail "the Claude settings still mention Mac-only paths, which don't exist in here"
+  else
+    ok "Claude settings are valid and carry no Mac-only paths"
+  fi
+}
+
+check_access() {
+  echo "Access"
+  local reply login arn
+  if reply="$(timeout 90 claude -p "Reply with just the word: ok" 2>&1)" && grep -qi '\bok\b' <<< "$reply"; then
+    ok "Claude answered a test prompt (signed in through the proxy)"
+  else
+    fail "Claude didn't answer a test prompt: $(tail -1 <<< "$reply"). Run 'portable claude' and /login once on this Mac"
+  fi
+
+  if [ -z "${GH_TOKEN:-}" ]; then
+    skip "GitHub: no token bound (see Credentials)"
+  elif login="$(timeout 20 gh api user -q .login 2>/dev/null)"; then
+    ok "GitHub accepts your token (signed in as $login)"
+    if [ -n "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ]; then
+      if timeout 20 git ls-remote "$PORTABLE_CLAUDE_CONFIG_REPO" HEAD >/dev/null 2>&1; then
+        ok "git can download from GitHub with your token"
+      else
+        fail "git can't download $PORTABLE_CLAUDE_CONFIG_REPO; add that repo to your token's repository access"
+      fi
+    fi
+  else
+    fail "GitHub rejected your token (expired or revoked?)"
+  fi
+  local name email
+  name="$(git config --global --get user.name 2>/dev/null)"; email="$(git config --global --get user.email 2>/dev/null)"
+  if [ -n "$name" ] && [ -n "$email" ]; then ok "commits will be made as $name <$email>"
+  else warn "commits have no name or email; set user.name and user.email in your Mac's git config"; fi
+
+  if [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
+    skip "AWS: not set up (PORTABLE_AWS_PROFILE in .env), or signing in failed"
+  elif arn="$(timeout 30 aws sts get-caller-identity --query Arn --output text 2>/dev/null)"; then
+    ok "AWS accepts your credentials, as $arn (region ${AWS_REGION:-not set})"
+  else
+    fail "AWS rejected your credentials, or couldn't be reached"
+  fi
+
+  # auth whoami goes through the proxy to the dashboard API; scanning a one-resource Terraform file uses
+  # the baked-in plugins and the pricing API.
+  local tf
+  if [ -z "${INFRACOST_CLI_AUTHENTICATION_TOKEN:-}" ]; then
+    skip "Infracost: no token bound (store one with 'portable secret set INFRACOST_CLI_AUTHENTICATION_TOKEN', then recreate the sandbox)"
+  elif ! timeout 30 infracost auth whoami >/dev/null 2>&1; then
+    fail "Infracost rejected your token, or dashboard.api.infracost.io couldn't be reached"
+  elif tf="$(mktemp -d)" \
+      && printf 'resource "aws_instance" "t" {\n  ami           = "ami-12345678"\n  instance_type = "t3.micro"\n}\nprovider "aws" {\n  region = "us-east-1"\n}\n' > "$tf/main.tf" \
+      && timeout 120 infracost scan "$tf" >/dev/null 2>&1; then
+    ok "Infracost accepts your token and prices Terraform with the baked-in plugins"
+  else
+    fail "Infracost accepts your token but couldn't scan a test Terraform file (try: infracost scan --debug)"
+  fi
+  if [ -n "${tf:-}" ]; then rm -rf "$tf"; fi
+}
+
+test_image="alpine:3"
+engine_ok=""
+
+check_docker() {
+  echo "Docker (the sandbox's own engine)"
+  if ! docker info >/dev/null 2>&1; then
+    fail "docker can't reach the sandbox's engine"
+    return
+  fi
+  ok "docker talks to the sandbox's engine (Docker $(docker version --format '{{.Server.Version}}' 2>/dev/null))"
+  if ! timeout 120 docker pull -q "$test_image" >/dev/null 2>&1; then
+    fail "the engine can't download images from Docker Hub (tried $test_image)"
+    return
+  fi
+  ok "the engine can download images from Docker Hub"
+  engine_ok=1
+
+  local probe id port
+  if probe="$(mktemp -p "$WORKSPACE_DIR" .portable-doctor.XXXXXX 2>/dev/null)" \
+    && echo portable > "$probe" \
+    && [ "$(docker run --rm -v "$WORKSPACE_DIR:/w:ro" "$test_image" cat "/w/${probe##*/}" 2>/dev/null)" = portable ]; then
+    ok "containers it starts can use files from your workspace folder"
+  else
+    fail "containers it starts can't see your workspace folder at $WORKSPACE_DIR"
+  fi
+  rm -f "$probe"
+  if [ "$(docker run --rm -v "$(dirname "$WORKSPACE_DIR"):/p:ro" "$test_image" ls -A /p 2>/dev/null)" = "$(basename "$WORKSPACE_DIR")" ]; then
+    ok "containers it starts can't see anything on your Mac outside $WORKSPACE_DIR"
+  else
+    fail "containers it starts can see folders next to $WORKSPACE_DIR"
+  fi
+
+  id="$(docker run -d -p 127.0.0.1::8080 "$test_image" \
+    sh -c 'while true; do printf "HTTP/1.0 200 OK\r\n\r\nportable" | nc -l -p 8080; done' 2>/dev/null)"
+  port="$(docker port "$id" 8080/tcp 2>/dev/null | head -1 | cut -d: -f2)"
+  if [ -n "$port" ] && sleep 1 && [ "$(curl -s --max-time 5 "http://localhost:$port")" = portable ]; then
+    ok "ports they publish are reachable on localhost in the sandbox (portable forwards them to the Mac)"
+  else
+    fail "a port published by a test container wasn't reachable on localhost"
+  fi
+  [ -z "$id" ] || docker rm -f "$id" >/dev/null 2>&1
+}
+
+check_network() {
+  echo "Network (the proxy on your Mac)"
+  local host
+  for host in registry.npmjs.org registry.terraform.io; do
+    if reachable "$host"; then ok "lets through sites on its list, e.g. $host"
+    else fail "blocks $host, which should be allowed"; fi
+  done
+  if reachable example.com; then fail "lets through sites that aren't on its list (example.com was reachable)"
+  else ok "blocks every other site (tested with example.com)"; fi
+
+  if [ -z "$engine_ok" ]; then
+    skip "containers Docker starts: not tested, since the engine isn't working (see Docker above)"
+    return
+  fi
+  if docker run --rm "$test_image" wget -q -T 8 -O /dev/null https://registry.npmjs.org 2>/dev/null; then
+    ok "containers Docker starts reach sites on its list too"
+  else
+    fail "containers Docker starts can't reach registry.npmjs.org, which should be allowed"
+  fi
+  if docker run --rm "$test_image" wget -q -T 8 -O /dev/null https://example.com 2>/dev/null; then
+    fail "containers Docker starts can reach sites that aren't on its list (example.com)"
+  else
+    ok "containers Docker starts are blocked from every other site too"
+  fi
+}
+
+check_sandbox
+check_secrets
+check_tools
+check_claude_config
+check_access
+check_docker
+check_network
+exit "$failed"

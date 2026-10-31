@@ -1,0 +1,138 @@
+# syntax=docker/sandbox-kit:3
+# portable's mixin for Docker Sandboxes (sbx). bin/portable adds it to Docker's Claude Code workload
+# (docker/sbx-kit-claude) with --kit. It brings the tools, portable's own skills and managed CLAUDE.md
+# as a filesystem overlay (portable.dockerfile), and declares what the sandbox may reach and do.
+# Spec: https://github.com/docker/sandbox-kit-spec (docs/spec/SPEC-v3.md)
+schemaVersion: "3"
+kind: mixin
+displayName: portable
+description: Terraform, Infracost, AWS CLI, gh and pnpm for Claude Code, plus the user's Claude configuration repo
+version: "2.0.0"
+provides: ["portable@2.0.0"]
+licenses: [MIT]
+
+capabilities:
+  # Outbound hosts, by name; the host-side proxy enforces this for the agent and for every container
+  # the sandbox's own Docker starts. Everything else is refused. Add project hosts with
+  # PORTABLE_ALLOW_DOMAINS in .env (bin/portable passes them to `sbx policy allow network`).
+  - type: com.docker.sandbox/network-policy@2
+    config:
+      # While install hooks run (portable-setup install clones the configuration repo).
+      install:
+        allow:
+          - github.com
+          - api.github.com
+      runtime:
+        allow:
+          # GitHub: web, API, git over HTTPS, release downloads
+          - github.com
+          - api.github.com
+          - uploads.github.com
+          - codeload.github.com
+          - objects.githubusercontent.com
+          - release-assets.githubusercontent.com
+          - raw.githubusercontent.com
+          # npm (Claude Code's docs list it too: https://code.claude.com/docs/en/network-config)
+          - registry.npmjs.org
+          # Terraform providers and modules
+          - registry.terraform.io
+          - releases.hashicorp.com
+          # Infracost's pricing (and events) and dashboard (and agents) APIs, its defaults in:
+          # https://github.com/infracost/cli/blob/v2.18.3/internal/config/config.go
+          # https://github.com/infracost/cli/blob/v2.18.3/internal/api/dashboard/config.go
+          # Plugins are baked in (portable.dockerfile), so releases.infracost.io isn't needed.
+          - pricing.api.infracost.io
+          - dashboard.api.infracost.io
+          # Docker Hub, for images the sandbox's Docker pulls: https://docs.docker.com/desktop/setup/allow-list/
+          - registry-1.docker.io
+          - auth.docker.io
+          - index.docker.io
+          - production.cloudfront.docker.com
+          # OS packages for images projects build (the official images' default mirrors)
+          - dl-cdn.alpinelinux.org
+          - deb.debian.org
+          # AWS. By name, so Lambda, Secrets Manager and the rest work; that also means any S3
+          # bucket or API Gateway endpoint is a reachable destination (see README, Network).
+          - "*.amazonaws.com"
+          - sts.amazonaws.com
+
+  # GitHub token from the Mac's Keychain, held by sbx and put on requests by the proxy; the sandbox
+  # only sees a placeholder in GH_TOKEN. install.sh registers the source:
+  #   sbx secret set github --command 'security find-generic-password -s portable -a GH_TOKEN -w'
+  # Optional, so a sandbox still starts without a token (then GitHub needs none, or fails).
+  # One entry per phase: every inject domain must be in that phase's allow list, and the install
+  # phase only allows what cloning the configuration repo needs. Spec:
+  # https://github.com/docker/sandbox-kit-spec/blob/main/docs/spec/capabilities/com.docker.sandbox/credential@1.md
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: GitHub token for cloning the Claude configuration repo
+    config:
+      service: github
+      phase: install
+      apiKey:
+        name: GH_TOKEN
+        proxyManaged: true
+        inject:
+          - { domain: api.github.com, header: Authorization, format: "Bearer %s" }
+          # git speaks Basic auth; gh's credential helper sends the placeholder as the password
+          # (portable-setup install configures it), the way Docker's github-clone kit does.
+          - { domain: github.com, header: Authorization, scheme: basic, username: x-access-token }
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: GitHub token for gh and git over HTTPS
+    config:
+      service: github
+      phase: runtime
+      apiKey:
+        name: GH_TOKEN
+        proxyManaged: true
+        inject:
+          - { domain: api.github.com, header: Authorization, format: "Bearer %s" }
+          - { domain: uploads.github.com, header: Authorization, format: "Bearer %s" }
+          - { domain: github.com, header: Authorization, scheme: basic, username: x-access-token }
+
+  # Infracost token (a personal access or service account token) from the Mac's Keychain, the same
+  # way; the sandbox sees a placeholder in INFRACOST_CLI_AUTHENTICATION_TOKEN. install.sh registers
+  # the source:
+  #   sbx secret set infracost --command 'security find-generic-password -s portable -a INFRACOST_CLI_AUTHENTICATION_TOKEN -w'
+  # The CLI uses that token as-is, with no local check, as an OAuth bearer token:
+  # https://github.com/infracost/cli/blob/v2.18.3/pkg/auth/config.go (login) and pkg/auth/token.go
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: Infracost token for cost estimates
+    config:
+      service: infracost
+      phase: runtime
+      apiKey:
+        name: INFRACOST_CLI_AUTHENTICATION_TOKEN
+        proxyManaged: true
+        inject:
+          - { domain: pricing.api.infracost.io, header: Authorization, format: "Bearer %s" }
+          - { domain: dashboard.api.infracost.io, header: Authorization, format: "Bearer %s" }
+
+  # Commits carry the Mac's git user.name and user.email (sbx reads the host's git config).
+  - type: com.docker.sandbox/git-identity@1
+    optional: true
+    description: Attribute commits to the user's git identity
+
+  # Defaults for the microVM. Not configurable from .env yet (TODO.md).
+  - type: com.docker.sandbox/resources@1
+    config:
+      cpu: 4
+      memory: 8g
+
+  # Set up and keep the user's Claude configuration repo. The scripts come from the overlay.
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        - command: [portable-setup, install]
+          user: "0"
+          env: [GH_TOKEN, PORTABLE_CLAUDE_CONFIG_REPO, PORTABLE_CLAUDE_CONFIG_DISABLE]
+          description: Clone the Claude configuration repo and link it into ~/.claude
+      startup:
+        # Runs alongside the agent, so an update lands for the next session, not the current one.
+        - command: [portable-setup, update]
+          user: "0"
+          background: true
+          env: [GH_TOKEN, PORTABLE_CLAUDE_CONFIG_REPO, PORTABLE_CLAUDE_CONFIG_DISABLE]
+          description: Update the Claude configuration repo from GitHub

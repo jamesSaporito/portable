@@ -1,11 +1,11 @@
 ---
 name: start
-description: Boots a workspace project's Docker Compose stack in portable's Docker engine, detached, from the Mac, without opening a portable shell. Use when the user types /start (optionally with a project folder), or asks to start, boot or bring up a project in portable.
+description: Boots a workspace project's Docker Compose stack in its portable sandbox, detached, from the Mac, without opening a portable shell. Use when the user types /start (optionally with a project folder), or asks to start, boot or bring up a project in portable.
 ---
 
 # Start a project in portable
 
-Runs the project's `docker compose up` through `bin/portable`, so it goes to portable's engine (`portable-engine`), not Docker on the Mac. The dev container exits once Compose returns; the project keeps running in the engine.
+Runs the project's `docker compose up` through `bin/portable`, so it goes to the project's sandbox and its own Docker engine, not Docker on the Mac. The command returns once Compose does; the project keeps running in the sandbox.
 
 ## 1. Pick the project
 
@@ -16,17 +16,16 @@ Runs the project's `docker compose up` through `bin/portable`, so it goes to por
 
 ## 2. Boot it
 
-From the project folder (`portable` starts the container in the matching folder):
+From the project folder (`portable` uses the sandbox for the folder it's run in, creating it on first use):
 
 ```sh
 cd "<project>" && portable docker compose up --build --detach
 ```
 
-- Allow up to 10 minutes; the first build and `portable`'s own image build can be slow.
+- Allow up to 10 minutes; the first build, and creating the sandbox the first time, can be slow.
 - Don't add `--wait`: one-shot services (e.g. an `install` step) exit and would make it fail.
 - Don't pass `-v`, change the project's compose file or `.env`, or run installs on the Mac.
-- If `portable` says the engine has an update waiting, mention it; it applies once no session is running.
-- If it fails, show the error. For a blocked host, point at `PORTABLE_ALLOW_DOMAINS`; for "port is already allocated", at whatever uses that port on the Mac.
+- If it fails, show the error. For a blocked host, point at `PORTABLE_ALLOW_DOMAINS`; for "port is already allocated", at whatever else in that sandbox uses the port.
 
 ## 3. Report
 
@@ -34,4 +33,12 @@ cd "<project>" && portable docker compose up --build --detach
 cd "<project>" && portable docker compose ps --all
 ```
 
-Give each service's state, and flag any that exited non-zero (show the last lines of `portable docker compose logs <service>`). For each published port, say whether it's in `PORTABLE_PORTS` in `~/.config/portable/.env`: those open at `http://localhost:<port>` on the Mac; the others only inside portable. Suggest adding missing ones to `PORTABLE_PORTS` (applies when no session is running) rather than editing it yourself.
+Give each service's state, and flag any that exited non-zero (show the last lines of `portable docker compose logs <service>`).
+
+Then the Mac URLs. `portable` forwards every port the stack publishes to the Mac after the command above returns, at the same number when the Mac has it free and otherwise at the next free one. List the mapping:
+
+```sh
+cd "<project>" && portable ports
+```
+
+Report each service's Mac URL, `http://localhost:<Mac port>`, and say when the Mac port differs from the port in the compose file.

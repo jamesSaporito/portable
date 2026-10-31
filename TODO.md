@@ -1,28 +1,32 @@
 # To do
 
 ## Before pushing
-- [x] Build `portable doctor` (replaces a test suite: checks tools, secrets, mounts and firewall) and run it clean
-- [x] Verify Claude starts in the container with your real credential (doctor: "Claude answered (subscription token)")
-- [ ] Verify a push to a repo the token doesn't cover fails (a dry-run push to System, which it covers, works since 2026-10-29)
-- [x] Run `portable doctor` with `PORTABLE_AWS_PROFILE` set and signed in (passed 2026-10-29)
-- [ ] Run `./uninstall.sh` for real once, then `./install.sh` again (only tested with a stand-in `docker`, a fake home folder and a throwaway Keychain entry; the engine's container, volumes and image were added since and are untested)
 
 ## Later
-- [ ] Once these changes are on GitHub's main, run `./install.sh` from `~/Projects/portable` to switch to the installed copy in `~/.local/share/portable` (until then `portable` still runs the working copy, which hides itself; installing before pushing would install the old version from GitHub)
-- [ ] Run `portable update` once for real after a merge (only tested against a local stand-in for GitHub)
-- [ ] Try `/start` and `/stop` on Portfolio2 once, from the Mac and in a session (the Mac ones were written from `bin/portable`'s code and the test run was blocked by the permission check; the session ones in `image/skills/` were only checked to load, not run)
-- [ ] Check the container's Claude colors now match the host (TERM/COLORTERM are passed through; only the variables were checked, not the colors on screen)
-- [ ] Config repo updates briefly show unfiltered `CLAUDE.md`/rules to sessions already running (atomic swap of a versioned clone would close it)
-- [ ] Host-side AWS credential endpoint (`AWS_CONTAINER_CREDENTIALS_FULL_URI`) so long sessions refresh instead of relaunching when STS expires
-- [ ] Linux/WSL secrets backend (`secret-tool`) for non-Mac hosts
-- [ ] Firewall is off (`PORTABLE_FIREWALL=off` in `.env`) because its allowlist works by address and breaks on CDNs: Docker builds resolve through Google DNS and get other Fastly addresses for `dl-cdn.alpinelinux.org` than the engine allowed, and Docker Hub's addresses rotate between 5-minute refreshes. If we want it back, more restricted: DNS-aware filtering with dnsmasq in the engine (Alpine `dnsmasq-dnssec-nftset`, a new package, needs approval and a Scout scan). It answers only allowed names (`address=/#/` for the rest), adds each address it returns to the nft set with `--nftset`, and the firewall blocks every other DNS server, so containers, builds and the engine all resolve through it. That also fixes AWS APIs on EC2-labelled addresses and closes DNS exfiltration. Projects will then need hosts like `binaries.prisma.sh` (Prisma) in `PORTABLE_ALLOW_DOMAINS`
-- [ ] `/usage` limit bars missing in the container: the `setup-token` token lacks the `user:profile` scope (README, Claude credential). Find a way without copying the host's full Keychain login
-- [ ] Revisit Docker Sandboxes (`sbx`) if it adds AWS support; proxy-injected secrets are the stronger model
-- [ ] Re-scan `docker:<DOCKER_VERSION>-dind`/`-cli` with `docker scout cves` and move `DOCKER_VERSION` once Docker ships builds with `golang.org/x/net` 0.60+ (CVE-2026-78663, critical; 29.9.2 still has it in runc, containerd, Compose and Buildx as of 2026-10-29)
-- [ ] Boot a real project with `docker compose up` in the container and run its tests (only doctor's test containers have run so far)
-- [ ] Check `PORTABLE_PORTS` end to end once the engine restarts: Portfolio2 at http://localhost:3000 in the Mac browser and Postgres on 5432 in TablePlus (only the generated compose config and the update notice were tested)
-- [ ] Firewall in a separate gateway container, if the engine-privileged bypass starts to matter (code with Docker access can flush the engine's rules)
-- [ ] Docker Hub's anonymous pull limit, if hit: a Docker Hub token from the Keychain for the engine
-- [ ] `portable_docker-data` only grows; a `portable` command to show and prune it (`docker system df` / `prune`)
-- [ ] Retry Portfolio2's `pnpm dev:docker` in the container once the engine restarts with the firewall off (it applies when no session is running)
-- [ ] See whether the container's Claude follows `image/claude-instructions.md` (managed `CLAUDE.md`): blocked hosts reported, not worked around; installs through compose, not on the shared `node_modules`
+- Port forwarding (2026-10-30, written but not yet run end to end): `portable doctor` from the workspace for the new "Ports" line; `/start` in `portable claude` on Portfolio2 and open the reported Mac URLs in the browser and TablePlus, then `/stop` and see the forwards go within ~5 s; a second sandbox on the same folder (`portable --name second docker compose up -d`) whose stack wants 3000 should get 3001 on the Mac; two `--worktree` agents in one sandbox whose stacks both want 3000 (the in-sandbox `docker-ports` skill should move one, and `portable ports` shows both); after exiting a session, `pgrep -f ports_watch` finds nothing
+- The README says the sandbox reaches "only the hosts in `kit/portable.yaml` and `PORTABLE_ALLOW_DOMAINS`", but sbx's own default policy on this Mac adds 195 allow rules, including `**.openai.com`, `**.chatgpt.com`, `**.cursor.sh`, `**.gitlab.com`, `**.gcr.io` (`sbx policy ls --wide`). Decide whether to prune them (`sbx policy rm`/`reset`) or document them, and fix the README either way
+- Blocked hosts answer "Approval required" and can be allowed with `sbx policy approval`; mention in the README that approving one widens the policy
+- Verify a push to a repo the token doesn't cover fails (a dry-run push to System, which it covers, worked on 2026-10-29 with the old setup)
+
+- Images built with Cloud Native Buildpacks don't pull in a sandbox (2026-10-30, `adobe/s3mock:5.2.3` on Portfolio2): their layers use absolute paths (`/layers/...`), and sbx runs the sandbox's dockerd and containerd with `GODEBUG=tarinsecurepath=0`, so extraction fails with `archive/tar: insecure file path`. The Mac's Docker, same version, pulls it fine. Decide between another S3 stand-in, re-packing such images, or documenting it in the README
+- `portable doctor` once reported `FAIL  sbx has no 'github' secret source` (2026-10-30) while `sbx secret ls` listed it and the sandbox half bound the token fine; the same grep matched right afterwards, so the check is flaky (sbx output while another sbx command runs?). Make it retry or read `sbx secret ls --format json`
+- The Mac's own `docker-ports` skill (claude-configuration repo) counts live listeners via lsof but not sbx's forwards from `sbx ls`, so a stopped sandbox's ports look free to a project run on the Mac directly
+- Review item 6 (FABLE-SUGGESTIONS.md): `portable-setup settings` merges the Mac's settings over the sandbox's own, so hooks, `mcpServers` and `permissions` a session adds to `~/.claude/settings.json` survive into later sessions; strip those keys from the sandbox's copy before merging
+- Review item 2: consider a separate Mac-only token for the `portable` and `claude-configuration` repos so the session token can't push to them at all (needs the sandbox's config clone to use a read-only route)
+- Review item 3: check from a sandbox that services on the Mac's localhost (`host.docker.internal`, the gateway IP) are refused, and that DNS can't be used to reach arbitrary hosts
+- Review item 7: nothing stops a session writing `.git/hooks` or `.git/config` in the workspace; only the README warns. Consider a check that lists changed hooks after a session
+- Review item 8: `debian:trixie-slim` and `docker/sbx-kit-claude:2.1.314` are pinned by tag, not digest; the configuration repo is still cloned and reset as root
+- Infracost sends a usage event to `pricing.api.infracost.io/event` on every command and v2.18.3 has no switch for it outside self-hosted pricing mode; revisit if that matters
+- Only the Terraform, Terraform-plan and AWS Infracost plugins are baked in; add Terragrunt/CloudFormation/Google/Azure to `kit/portable.dockerfile` if a project needs them
+- Once these changes are on GitHub's main, run `./install.sh` from `~/Projects/portable` to switch to the installed copy in `~/.local/share/portable`
+- Run `portable update` once for real after a merge (only tested against a local stand-in for GitHub)
+- Try `/start` and `/stop` on Portfolio2 once, from the Mac and in a session, now that they go through `sbx exec`
+- Check what the sandbox's `~/.claude/CLAUDE.md` looks like after a reboot: Docker's Claude workload materializes its own guidance there and claude-configuration's `install.sh` links the same path; if they fight, deliver the workload's text through `/etc/claude-code/CLAUDE.md` instead
+- `resources@1` is fixed at 4 CPUs and 8 GiB in `kit/portable.yaml`; make it configurable (`PORTABLE_MEMORY`/`PORTABLE_CPUS`) once kit args are confirmed to expand into capability config, or via `sbxenv.yaml` when it leaves experimental
+- Host-side AWS credential endpoint (`AWS_CONTAINER_CREDENTIALS_FULL_URI` on `host.docker.internal`) so long sessions refresh instead of relaunching when STS expires, and so the keys never sit in the VM
+- `*.amazonaws.com` is allowed by name, so any S3 bucket or API Gateway endpoint is a reachable destination; narrow it to the services and region you use once the list is known
+- Linux hosts: sbx supports Ubuntu 24.04 with KVM; portable would need a secrets backend other than the Keychain (`secret-tool`) and sbx's file fallback is world-readable per its docs
+- Docker Hub's anonymous pull limit, if hit: sbx reuses the Docker login for pulls, so check whether that already covers it
+- A sandbox's Docker data only grows; `portable rm`/`prune` reset it, but a `portable df` showing sizes would help
+- See whether the sandbox's Claude follows `kit/files/claude-instructions.md` (managed `CLAUDE.md`): blocked hosts reported, not worked around; installs through compose, not on the shared `node_modules`
+- `/usage` limit bars: check whether sbx's OAuth `/login` token carries the `user:profile` scope the old `setup-token` lacked

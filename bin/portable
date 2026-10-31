@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Runs a command in the sandboxed dev container, or a shell when given none.
-#   portable [--name NAME] [command]    -> bash (or the command) in a new container
-#   portable claude                      -> Claude Code in the container
-#   portable claude --worktree NAME      -> Claude in its own git worktree; container named NAME
-#   portable ps                          -> list running containers
-#   portable stop NAME                   -> stop one
-#   portable doctor                      -> check the setup, on the Mac and in a container
+# Runs a command in the sandbox for the current folder, or a shell when given none.
+#   portable [--name NAME] [command]    -> bash (or the command) in the folder's sandbox
+#   portable claude                      -> Claude Code in the sandbox
+#   portable claude --worktree NAME      -> Claude in its own git worktree, in the folder's sandbox
+#   portable ps                          -> list portable's sandboxes
+#   portable ports [NAME]                -> forward the ports its containers publish to the Mac, and list them
+#   portable stop NAME                   -> stop one (keeps its data)
+#   portable rm NAME                     -> delete one, with its Docker data and Claude history
+#   portable prune                       -> delete every stopped one
+#   portable doctor                      -> check the setup, on the Mac and in a sandbox
 #   portable update                      -> update the installed copy from GitHub
-#   portable secret set NAME             -> store a secret in the Keychain (e.g. ANTHROPIC_API_KEY)
+#   portable secret set NAME             -> store a secret in the Keychain (GH_TOKEN)
 #   portable secret rm NAME              -> remove it
 set -euo pipefail
 
@@ -23,6 +26,7 @@ PORTABLE_ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
 . "$PORTABLE_ROOT/lib/secrets.sh"
 . "$PORTABLE_ROOT/lib/aws.sh"
 . "$PORTABLE_ROOT/lib/launch.sh"
+. "$PORTABLE_ROOT/lib/ports.sh"
 . "$PORTABLE_ROOT/lib/doctor.sh"
 . "$PORTABLE_ROOT/lib/update.sh"
 
@@ -34,12 +38,15 @@ case "${1:-}" in
       *) echo "usage: portable secret set|rm NAME" >&2; exit 2 ;;
     esac
     exit ;;
-  ps) list_containers; exit ;;
+  ps) ensure_sbx && list_containers; exit ;;
+  ports) ports_command "${2:-}"; exit ;;
+  prune) ensure_sbx && prune_containers; exit ;;
   doctor) run_doctor; exit ;;
   update) update_portable; exit ;;
-  stop)
-    [ -n "${2:-}" ] || { echo "usage: portable stop NAME" >&2; exit 2; }
-    stop_container "$2"
+  stop | rm)
+    [ -n "${2:-}" ] || { echo "usage: portable $1 NAME" >&2; exit 2; }
+    ensure_sbx || exit 1
+    if [ "$1" = stop ]; then stop_container "$2"; else remove_container "$2"; fi
     exit ;;
 esac
 
