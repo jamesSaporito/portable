@@ -24,5 +24,5 @@ update_portable() {
     echo "portable: couldn't fast-forward $dir (its history differs from GitHub's)" >&2
     return 1
   fi
-  echo "Updated. The images rebuild at the next start if image/ changed."
+  echo "Updated. If kit/ changed, sandboxes created before this keep the old kit; 'portable rm' them to rebuild."
 }

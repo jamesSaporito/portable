@@ -65,7 +65,7 @@ cd ~/path/to/this/repo
 
 `install.sh` is safe to re-run. It:
 
-1. Installs portable in `~/.local/share/portable`, a clone of the same GitHub repo, and continues with that copy. That's the copy `portable` runs, kept outside any workspace, so the clone you started from can be worked on in portable like any other project (see [Changing portable itself](#changing-portable-itself)). Settings left in the clone's `.env` move to `~/.config/portable/.env`.
+1. Installs portable in `~/.local/share/portable`, a clone of the same GitHub repo, or updates that copy from GitHub if it's already there, and continues with that copy. That's the copy `portable` runs, kept outside any workspace, so the clone you started from can be worked on in portable like any other project (see [Changing portable itself](#changing-portable-itself)). Settings left in the clone's `.env` move to `~/.config/portable/.env`.
 2. Installs Docker Sandboxes with Homebrew if it's missing (`brew trust docker/tap && brew install docker/tap/sbx`) and signs you in to Docker.
 3. Links the `portable` command into `~/.local/bin` and adds that folder to your PATH in `~/.zshrc`.
 4. Creates `~/.config/portable/.env` from `.env.example` if there isn't one.

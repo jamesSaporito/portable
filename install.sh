@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-command setup on a new Mac. Safe to re-run.
 #   0. when run from a clone (e.g. ~/Projects/portable): makes the installed copy, a clone of the same
-#      GitHub repo in ~/.local/share/portable, moves the clone's old .env to the settings file, and
+#      GitHub repo in ~/.local/share/portable, or updates it from GitHub when it's already there; moves
+#      the clone's old .env to the settings file, and
 #      continues with the installed copy's install.sh, which does the rest
 #   1. installs Docker Sandboxes (sbx) with Homebrew if needed, and signs in to Docker
 #   2. links `portable` into ~/.local/bin and adds that folder to PATH in your shell's rc file
@@ -14,6 +15,7 @@ PORTABLE_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$PORTABLE_ROOT/lib/secrets.sh"
 . "$PORTABLE_ROOT/lib/aws.sh"
 . "$PORTABLE_ROOT/lib/launch.sh"
+. "$PORTABLE_ROOT/lib/update.sh"
 
 bin_dir="$HOME/.local/bin"
 
@@ -23,7 +25,12 @@ install_copy() {
   [ "$PORTABLE_ROOT" != "$installed" ] || return 0
 
   if [ -d "$PORTABLE_INSTALL_DIR/.git" ]; then
-    echo "portable is already installed in $PORTABLE_INSTALL_DIR; 'portable update' updates it"
+    # Bring it up to GitHub's branch first, or the hand-off below would run an older installer.
+    echo "portable is already installed in $PORTABLE_INSTALL_DIR; updating it from GitHub"
+    if ! update_portable; then
+      echo "Fix the installed copy as shown above, then run install.sh again." >&2
+      exit 1
+    fi
   else
     if ! url="$(git -C "$PORTABLE_ROOT" remote get-url origin 2>/dev/null)"; then
       echo "This clone has no 'origin' remote to install portable from." >&2
