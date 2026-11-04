@@ -11,6 +11,7 @@
 - Node rebuild: global hosts that an older portable added with `sbx policy allow network` (no `--sandbox`) still apply to every sandbox; list them with `sbx policy ls --wide` and remove the ones that should be per environment now
 
 ## Later
+- Kit builds now go through sbx's builder sandbox (`SBX_KIT_BUILDER=sandbox`, undocumented, found in sbx 0.51.0). Only `sbx create` was run by hand with it on this Mac (docker driver, containerd store off); run a real `portable` with it, once with the containerd store on, and recheck the variable after sbx upgrades
 - Linux hosts are out of scope on purpose (Keychain secrets); if that changes, the pieces needed are a Secret Service backend, `ss` for port detection, Docker's apt route for sbx and the linux Node builds
 - The environment page has no way to recreate a sandbox (for new CPUs/memory); it shows the commands instead, since that deletes Docker data. Add a button with a confirmation if that gets tedious
 - The README says the sandbox reaches only the kit's hosts and the environment's allowed hosts, but sbx's own default policy on this Mac adds 195 allow rules, including `**.openai.com`, `**.chatgpt.com`, `**.cursor.sh`, `**.gitlab.com`, `**.gcr.io` (`sbx policy ls --wide`). Decide whether to prune them (`sbx policy rm`/`reset`) or document them, and fix the README either way
