@@ -59,9 +59,6 @@ async function currentEnv(ctx, name) {
 // Gets the environment's sandbox running with its settings applied and its page up.
 async function prepare(ctx, env, ws) {
   const settings = settingsFor(ctx, env);
-  if (!(await ctx.secrets.has('GH_TOKEN'))) {
-    say('no GitHub token stored; run: portable configure (then recreate the sandbox: portable rm NAME)');
-  }
   const existing = await ctx.sbx.get(env.sandbox);
   if (!existing) {
     if (!(await createSandbox(ctx, env, settings, ws))) throw new UserError(`couldn't create the sandbox ${env.sandbox}`);
@@ -205,13 +202,14 @@ async function ui(ctx, name) {
   await ctx.runner.run('open', [agent.url]);
 }
 
-async function confirm(question, defaultYes = false) {
+// Every yes/no question portable asks looks the same and defaults to no, like install.sh's.
+async function confirm(question) {
   if (!process.stdin.isTTY) return false;
   // Closed after each answer, so a prompt that follows (e.g. the Keychain's) gets the terminal.
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await rl.question(`${question} ${defaultYes ? '[Y/n]' : '[y/N]'} `)).trim();
+  const answer = (await rl.question(`${question} [y/N] `)).trim();
   rl.close();
-  return answer === '' ? defaultYes : /^y/i.test(answer);
+  return /^y/i.test(answer);
 }
 
 async function stopOrRemove(ctx, command, name) {
