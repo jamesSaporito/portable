@@ -344,6 +344,6 @@ It's safe to re-run. It:
 4. Asks whether to delete your secrets from the Keychain (macOS).
 5. Stops any environment page still running, and deletes portable's own Node.
 6. Removes the `portable` command and the PATH lines `install.sh` added to `~/.zshrc` (a backup is saved as `~/.zshrc.portable-backup`). The PATH line stays if other programs are in `~/.local/bin`.
-7. Asks whether to delete the installed copy (`~/.local/share/portable`) and your settings (`~/.config/portable`: `config.json` and every environment's settings and sticky ports, plus `~/.local/state/portable`).
+7. Asks whether to delete the installed copy (`~/.local/share/portable`) and your settings (`~/.config/portable`: `config.json` and every environment's settings and sticky ports, plus `~/.local/state/portable`). Every question defaults to no; anything you keep is named at the end of that step, e.g. "Kept your settings in ~/.config/portable", and a reinstall picks your settings up again.
 
-`./uninstall.sh --yes` answers yes to everything. It never touches your workspace folder, clones of portable in it, other sandboxes or sbx itself (`brew uninstall sbx`).
+`./uninstall.sh --yes` answers yes to everything. It never touches your project folders, clones of portable in them, other sandboxes or sbx itself (`brew uninstall sbx`).
