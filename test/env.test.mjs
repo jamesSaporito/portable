@@ -14,10 +14,11 @@ function setup(t) {
   return { home, paths, ws, folders };
 }
 
-test('workspaceFolder refuses broad, protected and system folders', (t) => {
+test('workspaceFolder is optional and refuses broad, protected, settings and system folders', (t) => {
   const { home, ws, folders } = setup(t);
+  assert.equal(workspaceFolder('', home, folders), null);
   assert.equal(workspaceFolder('~/Projects/sandboxed', home, folders), ws);
-  for (const bad of ['/', '~', '~/', '/Users', '/usr/local/x']) {
+  for (const bad of ['/', '~', '~/', '/Users', '/usr/local/x', '~/.config/x', '~/Library/x']) {
     assert.throws(() => workspaceFolder(bad, home, folders), UserError, bad);
   }
   fs.mkdirSync(path.join(folders.config, 'ws'), { recursive: true });
@@ -26,15 +27,31 @@ test('workspaceFolder refuses broad, protected and system folders', (t) => {
 
 test('sessionFolder only allows the workspace and folders in it, minus protected ones', (t) => {
   const { home, ws, folders } = setup(t);
-  assert.equal(sessionFolder(path.join(ws, 'app'), ws, folders), path.join(ws, 'app'));
-  assert.equal(sessionFolder(ws, ws, folders), ws);
-  assert.throws(() => sessionFolder(home, ws, folders), /workspace folder/);
+  assert.equal(sessionFolder(path.join(ws, 'app'), ws, folders, home), path.join(ws, 'app'));
+  assert.equal(sessionFolder(ws, ws, folders, home), ws);
+  assert.throws(() => sessionFolder(home, ws, folders, home), /workspace folder/);
   // A sibling whose name starts with the workspace's isn't inside it.
   fs.mkdirSync(`${ws}-other`);
-  assert.throws(() => sessionFolder(`${ws}-other`, ws, folders), /workspace folder/);
+  assert.throws(() => sessionFolder(`${ws}-other`, ws, folders, home), /workspace folder/);
   const inner = { ...folders, config: path.join(ws, 'config') };
   fs.mkdirSync(inner.config);
-  assert.throws(() => sessionFolder(inner.config, ws, inner), /configuration repo/);
+  assert.throws(() => sessionFolder(inner.config, ws, inner, home), /configuration repo/);
+});
+
+test('without a workspace folder, sessionFolder allows any project folder but not home, its parents or settings', (t) => {
+  const { home, folders } = setup(t);
+  const project = path.join(home, 'code', 'my-app');
+  fs.mkdirSync(project, { recursive: true });
+  assert.equal(sessionFolder(project, null, folders, home), project);
+  assert.throws(() => sessionFolder(home, null, folders, home), /too broad/);
+  assert.throws(() => sessionFolder(path.dirname(home), null, folders, home), /too broad/);
+  assert.throws(() => sessionFolder('/', null, folders, home), /too broad/);
+  for (const settings of ['.ssh', '.config/portable', 'Library/Application Support']) {
+    fs.mkdirSync(path.join(home, settings), { recursive: true });
+    assert.throws(() => sessionFolder(path.join(home, settings), null, folders, home), /settings or secrets/, settings);
+  }
+  fs.mkdirSync(path.join(folders.self, 'lib'), { recursive: true });
+  assert.throws(() => sessionFolder(path.join(folders.self, 'lib'), null, folders, home), /copy of portable/);
 });
 
 test('protectedFolders finds the git repo ~/.claude/CLAUDE.md links into', (t) => {

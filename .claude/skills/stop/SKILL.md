@@ -11,9 +11,8 @@ Runs the project's `docker compose down` through `bin/portable`, in the project'
 
 Same as the `start` skill:
 
-- Read `WORKSPACE_DIR` from portable's settings, `~/.config/portable/.env` (only that line), expanding `~`. Default `~/Projects/sandboxed`.
-- If the user named a folder (`/stop api`), use `$WORKSPACE_DIR/<folder>`.
-- Otherwise, if `$WORKSPACE_DIR` has a compose file, use it.
+- If the user named a folder (`/stop api`), use that folder, relative to the current one.
+- Otherwise, if the current folder has a compose file, use it.
 - Otherwise list the subfolders that have one and ask which.
 
 ## 2. Stop it
