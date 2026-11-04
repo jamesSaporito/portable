@@ -4,17 +4,24 @@
 #   2. asks to remove the GitHub token and Infracost token sources from sbx
 #   3. asks to delete leftovers of the Docker-based portable (engine container, volumes, images), if
 #      Docker is still installed
-#   4. asks to delete the secrets in the Keychain
-#   5. removes the `portable` command and the PATH lines install.sh added
-#   6. asks to delete the installed copy (~/.local/share/portable) and the settings file
+#   4. asks to delete the secrets in the Keychain (macOS)
+#   5. stops the environment pages and removes the `portable` command and the PATH lines install.sh added
+#   6. deletes portable's own Node (~/.local/share/portable-node), then asks to delete the installed
+#      copy (~/.local/share/portable) and the settings (config.json and
+#      every environment's settings and sticky ports)
 # Never touches the workspace folder, clones of portable in it, other sandboxes or sbx itself
 # (brew uninstall sbx removes that).
 set -euo pipefail
 
 PORTABLE_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$PORTABLE_ROOT/lib/secrets.sh"
-. "$PORTABLE_ROOT/lib/aws.sh"
-. "$PORTABLE_ROOT/lib/launch.sh"
+PORTABLE_INSTALL_DIR="${PORTABLE_INSTALL_DIR:-$HOME/.local/share/portable}"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/portable"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/portable"
+KEYCHAIN_SERVICE="${PORTABLE_KEYCHAIN_SERVICE:-portable}"
+NODE_DIR="${PORTABLE_NODE_DIR:-$HOME/.local/share/portable-node}"
+# portable's own Node, or any other while it's still there.
+NODE="$NODE_DIR/current/bin/node"
+[ -x "$NODE" ] || NODE="$(command -v node || echo node)"
 
 bin_dir="$HOME/.local/bin"
 marker="# Added by portable/install.sh"
@@ -33,20 +40,24 @@ ask() {
   [[ "$reply" =~ ^[Yy] ]]
 }
 
+# portable's sandboxes, one name per line.
+sandbox_names() {
+  sbx ls --format json 2>/dev/null | "$NODE" -e '
+    let text = ""; process.stdin.on("data", (c) => { text += c; }).on("end", () => {
+      try { for (const s of JSON.parse(text)) if (s.name.startsWith("portable-")) console.log(s.name); } catch {}
+    });'
+}
+
 remove_sandboxes() {
   if ! command -v sbx >/dev/null || ! sbx ls >/dev/null 2>&1; then
     echo "sbx isn't installed or signed in; skipping sandboxes. Sign in (sbx login) and re-run to remove them."
     return
   fi
-  if ! command -v jq >/dev/null; then
-    echo "jq isn't installed, so portable's sandboxes can't be listed; skipping them. Install it (brew install jq) and re-run, or delete them with sbx rm."
-    return
-  fi
   local names name
-  names="$(sandboxes_json | jq -r '.[].name')"
+  names="$(sandbox_names)"
   if [ -n "$names" ]; then
     echo "portable's sandboxes (deleting them removes their Docker data and Claude history; workspace files stay):"
-    list_containers
+    "$NODE" "$PORTABLE_ROOT/bin/portable.mjs" ps || true
     if ask "Delete them?"; then
       while IFS= read -r name; do
         sbx rm --force "$name" >/dev/null && echo "Deleted ${name#portable-}"
@@ -56,10 +67,10 @@ remove_sandboxes() {
     fi
   fi
   if sbx secret ls 2>/dev/null | grep -q 'github' && ask "Remove the GitHub token source from sbx?"; then
-    sbx secret rm github >/dev/null 2>&1 && echo "Removed it"
+    sbx secret rm --force github >/dev/null 2>&1 && echo "Removed it" || echo "Couldn't remove the github source; run: sbx secret rm --force github"
   fi
   if sbx secret ls 2>/dev/null | grep -q 'infracost' && ask "Remove the Infracost token source from sbx?"; then
-    sbx secret rm infracost >/dev/null 2>&1 && echo "Removed it"
+    sbx secret rm --force infracost >/dev/null 2>&1 && echo "Removed it" || echo "Couldn't remove the infracost source; run: sbx secret rm --force infracost"
   fi
 }
 
@@ -87,28 +98,39 @@ remove_old_docker() {
 
 remove_secrets() {
   local name stored=()
-  for name in "${PORTABLE_SECRETS[@]}" ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
-    secret_get "$name" >/dev/null && stored+=("$name")
+  for name in GH_TOKEN INFRACOST_CLI_AUTHENTICATION_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
+    security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$name" >/dev/null 2>&1 && stored+=("$name")
   done
   [ ${#stored[@]} -gt 0 ] || return 0
   if ask "Delete ${stored[*]} from the Keychain? You'd need to create new tokens to reinstall."; then
-    for name in "${stored[@]}"; do secret_delete "$name" 2>/dev/null; done
+    for name in "${stored[@]}"; do security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$name" >/dev/null 2>&1; done
     echo "Deleted the secrets"
   fi
+}
+
+# The environment pages stop with their sandboxes; stop any left over.
+stop_agents() {
+  local file pid
+  for file in "$STATE_DIR"/*/agent.json; do
+    [ -f "$file" ] || continue
+    pid="$(sed -n 's/.*"pid": *\([0-9]*\).*/\1/p' "$file")"
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null && echo "Stopped the page of $(basename "$(dirname "$file")")"
+  done
+  return 0
 }
 
 remove_command() {
   local link="$bin_dir/portable"
   # Only the link install.sh made: to the installed copy, or to a clone from before there was one.
   case "$(readlink "$link" 2>/dev/null)" in
-    "$PORTABLE_INSTALL_DIR/bin/portable" | "$PORTABLE_ROOT/bin/portable")
+    "$PORTABLE_INSTALL_DIR/bin/portable.mjs" | "$PORTABLE_ROOT/bin/portable.mjs" | "$PORTABLE_INSTALL_DIR/bin/portable" | "$PORTABLE_ROOT/bin/portable")
       rm "$link"
       echo "Removed $link" ;;
   esac
   rmdir "$bin_dir" 2>/dev/null || true
 
   local rc
-  for rc in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+  for rc in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile"; do
     grep -qxF "$marker" "$rc" 2>/dev/null || continue
     # Other tools install into ~/.local/bin too; keep it on PATH while anything is left there.
     if [ -d "$bin_dir" ]; then
@@ -135,16 +157,20 @@ remove_install() {
       echo "Deleted $PORTABLE_INSTALL_DIR"
     fi
   fi
-  if [ -f "$PORTABLE_ENV_FILE" ] && ask "Delete your settings in $PORTABLE_ENV_FILE?"; then
-    rm "$PORTABLE_ENV_FILE"
-    rmdir "$(dirname "$PORTABLE_ENV_FILE")" 2>/dev/null || true
-    echo "Deleted $PORTABLE_ENV_FILE"
+  if [ -d "$NODE_DIR" ]; then
+    rm -rf "$NODE_DIR"
+    echo "Deleted portable's Node ($NODE_DIR)"
+  fi
+  if [ -d "$CONFIG_DIR" ] && ask "Delete your settings in $CONFIG_DIR (config.json, and each environment's settings and ports)?"; then
+    rm -rf "$CONFIG_DIR" "$STATE_DIR"
+    echo "Deleted $CONFIG_DIR and $STATE_DIR"
   fi
 }
 
 remove_sandboxes
 remove_old_docker
 remove_secrets
+stop_agents
 remove_command
 remove_install
 echo "Done. Your workspace folder and any clones of portable in it were left in place. sbx itself stays installed (brew uninstall sbx)."

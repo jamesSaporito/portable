@@ -1,59 +1,23 @@
-#!/usr/bin/env bash
-# Runs a command in the sandbox for the current folder, or a shell when given none.
-#   portable [--name NAME] [command]    -> bash (or the command) in the folder's sandbox
-#   portable claude                      -> Claude Code in the sandbox
-#   portable claude --worktree NAME      -> Claude in its own git worktree, in the folder's sandbox
-#   portable ps                          -> list portable's sandboxes
-#   portable ports [NAME]                -> forward the ports its containers publish to the Mac, and list them
-#   portable stop NAME                   -> stop one (keeps its data)
-#   portable rm NAME                     -> delete one, with its Docker data and Claude history
-#   portable prune                       -> delete every stopped one
-#   portable doctor                      -> check the setup, on the Mac and in a sandbox
-#   portable update                      -> update the installed copy from GitHub
-#   portable secret set NAME             -> store a secret in the Keychain (GH_TOKEN)
-#   portable secret rm NAME              -> remove it
-set -euo pipefail
+#!/bin/sh
+# The `portable` command install.sh links onto PATH. Runs bin/portable.mjs with portable's own
+# Node 26 (~/.local/share/portable-node, installed by install.sh), so every computer runs portable
+# on the same Node line whatever else is installed. Falls back to the `node` on PATH when that's
+# missing, e.g. in a clone before install.sh has run.
+set -e
 
 # Resolve symlinks so this works when linked onto PATH.
-src="${BASH_SOURCE[0]}"
+src="$0"
 while [ -L "$src" ]; do
   dir="$(cd -P "$(dirname "$src")" && pwd)"
   src="$(readlink "$src")"
-  [[ "$src" != /* ]] && src="$dir/$src"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
 done
-PORTABLE_ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
+root="$(cd -P "$(dirname "$src")/.." && pwd)"
 
-. "$PORTABLE_ROOT/lib/secrets.sh"
-. "$PORTABLE_ROOT/lib/aws.sh"
-. "$PORTABLE_ROOT/lib/launch.sh"
-. "$PORTABLE_ROOT/lib/ports.sh"
-. "$PORTABLE_ROOT/lib/doctor.sh"
-. "$PORTABLE_ROOT/lib/update.sh"
-
-case "${1:-}" in
-  secret)
-    case "${2:-}:${3:-}" in
-      set:?*) secret_set "$3" ;;
-      rm:?*) secret_delete "$3" ;;
-      *) echo "usage: portable secret set|rm NAME" >&2; exit 2 ;;
-    esac
-    exit ;;
-  ps) ensure_sbx && list_containers; exit ;;
-  ports) ports_command "${2:-}"; exit ;;
-  prune) ensure_sbx && prune_containers; exit ;;
-  doctor) run_doctor; exit ;;
-  update) update_portable; exit ;;
-  stop | rm)
-    [ -n "${2:-}" ] || { echo "usage: portable $1 NAME" >&2; exit 2; }
-    ensure_sbx || exit 1
-    if [ "$1" = stop ]; then stop_container "$2"; else remove_container "$2"; fi
-    exit ;;
-esac
-
-name=""
-if [ "${1:-}" = --name ]; then
-  [ -n "${2:-}" ] || { echo "usage: portable --name NAME [command]" >&2; exit 2; }
-  name="$2"
-  shift 2
+node="${PORTABLE_NODE_DIR:-$HOME/.local/share/portable-node}/current/bin/node"
+[ -x "$node" ] || node="$(command -v node || true)"
+if [ -z "$node" ]; then
+  echo "portable: Node isn't installed; run $root/install.sh, which installs portable's own Node 26" >&2
+  exit 1
 fi
-run_container "$name" "$@"
+exec "$node" "$root/bin/portable.mjs" "$@"

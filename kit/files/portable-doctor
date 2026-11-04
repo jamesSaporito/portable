@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The sandbox half of `portable doctor` (lib/doctor.sh runs the Mac half, then this in a throwaway
+# The sandbox half of `portable doctor` (lib/doctor.mjs runs the host half, then this in a throwaway
 # sandbox). Prints one line per check and exits non-zero if any failed.
 set -uo pipefail
 
@@ -45,7 +45,7 @@ check_sandbox() {
   local parent
   parent="$(dirname "$WORKSPACE_DIR")"
   if [ "$(ls -A "$parent" 2>/dev/null)" = "$(basename "$WORKSPACE_DIR")" ]; then
-    ok "sees nothing else on your Mac (the folders above are only the path to it)"
+    ok "sees nothing else on your computer (the folders above are only the path to it)"
   else
     fail "can see other folders next to $WORKSPACE_DIR: $(ls -A "$parent" 2>/dev/null | tr '\n' ' ')"
   fi
@@ -90,7 +90,7 @@ check_claude_config() {
   echo "Claude configuration"
   local dir=/home/agent/claude-configuration name
   if [ -z "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ]; then
-    skip "no Claude configuration repo set (PORTABLE_CLAUDE_CONFIG_REPO in .env)"
+    skip "no Claude configuration repo set (claudeConfigRepo in portable's config.json)"
   elif [ ! -d "$dir/.git" ]; then
     fail "your Claude configuration repo couldn't be downloaded (does the GitHub token include it?)"
   elif [ "$(readlink "$CLAUDE_CONFIG_DIR/CLAUDE.md" 2>/dev/null)" != "$dir/CLAUDE.md" ]; then
@@ -127,9 +127,9 @@ check_claude_config() {
   elif ! jq empty "$settings" 2>/dev/null; then
     fail "the sandbox's Claude settings are broken (settings.json isn't valid JSON)"
   elif jq -e '[.. | strings] | any(test("(^|[^A-Za-z0-9_.-])(/Users|/opt/homebrew|/Applications)(/|$)"))' "$settings" >/dev/null 2>&1; then
-    fail "the Claude settings still mention Mac-only paths, which don't exist in here"
+    fail "the Claude settings still mention macOS-only paths, which don't exist in here"
   else
-    ok "Claude settings are valid and carry no Mac-only paths"
+    ok "Claude settings are valid and carry no macOS-only paths"
   fi
 }
 
@@ -139,7 +139,7 @@ check_access() {
   if reply="$(timeout 90 claude -p "Reply with just the word: ok" 2>&1)" && grep -qi '\bok\b' <<< "$reply"; then
     ok "Claude answered a test prompt (signed in through the proxy)"
   else
-    fail "Claude didn't answer a test prompt: $(tail -1 <<< "$reply"). Run 'portable claude' and /login once on this Mac"
+    fail "Claude didn't answer a test prompt: $(tail -1 <<< "$reply"). Run 'portable claude' and /login once on this computer"
   fi
 
   if [ -z "${GH_TOKEN:-}" ]; then
@@ -159,10 +159,10 @@ check_access() {
   local name email
   name="$(git config --global --get user.name 2>/dev/null)"; email="$(git config --global --get user.email 2>/dev/null)"
   if [ -n "$name" ] && [ -n "$email" ]; then ok "commits will be made as $name <$email>"
-  else warn "commits have no name or email; set user.name and user.email in your Mac's git config"; fi
+  else warn "commits have no name or email; set user.name and user.email in your computer's git config"; fi
 
   if [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
-    skip "AWS: not set up (PORTABLE_AWS_PROFILE in .env), or signing in failed"
+    skip "AWS: not set up (awsProfile in config.json or on the environment page), or signing in failed"
   elif arn="$(timeout 30 aws sts get-caller-identity --query Arn --output text 2>/dev/null)"; then
     ok "AWS accepts your credentials, as $arn (region ${AWS_REGION:-not set})"
   else
@@ -213,7 +213,7 @@ check_docker() {
   fi
   rm -f "$probe"
   if [ "$(docker run --rm -v "$(dirname "$WORKSPACE_DIR"):/p:ro" "$test_image" ls -A /p 2>/dev/null)" = "$(basename "$WORKSPACE_DIR")" ]; then
-    ok "containers it starts can't see anything on your Mac outside $WORKSPACE_DIR"
+    ok "containers it starts can't see anything on your computer outside $WORKSPACE_DIR"
   else
     fail "containers it starts can see folders next to $WORKSPACE_DIR"
   fi
@@ -222,7 +222,7 @@ check_docker() {
     sh -c 'while true; do printf "HTTP/1.0 200 OK\r\n\r\nportable" | nc -l -p 8080; done' 2>/dev/null)"
   port="$(docker port "$id" 8080/tcp 2>/dev/null | head -1 | cut -d: -f2)"
   if [ -n "$port" ] && sleep 1 && [ "$(curl -s --max-time 5 "http://localhost:$port")" = portable ]; then
-    ok "ports they publish are reachable on localhost in the sandbox (portable forwards them to the Mac)"
+    ok "ports they publish are reachable on localhost in the sandbox (portable forwards them to the host)"
   else
     fail "a port published by a test container wasn't reachable on localhost"
   fi
@@ -230,7 +230,7 @@ check_docker() {
 }
 
 check_network() {
-  echo "Network (the proxy on your Mac)"
+  echo "Network (the proxy on your computer)"
   local host
   for host in registry.npmjs.org registry.terraform.io; do
     if reachable "$host"; then ok "lets through sites on its list, e.g. $host"

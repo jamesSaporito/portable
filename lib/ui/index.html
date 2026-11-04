@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>portable</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="title">portable</h1>
+      <p id="folder" class="muted"></p>
+    </div>
+    <span id="status" class="pill">…</span>
+  </header>
+
+  <p id="banner" class="banner" hidden></p>
+
+  <main>
+    <section id="ports">
+      <div class="section-head">
+        <h2>Ports</h2>
+        <button type="button" data-action="sync">Refresh</button>
+      </div>
+      <p class="muted">Ports that containers in the sandbox publish, forwarded to this computer. Each one keeps its host port across restarts; change it here.</p>
+      <table>
+        <thead><tr><th>Sandbox</th><th>Host</th><th>Open</th><th></th></tr></thead>
+        <tbody id="ports-body"></tbody>
+      </table>
+    </section>
+
+    <section id="services">
+      <div class="section-head">
+        <h2>Services</h2>
+        <button type="button" data-action="services">Refresh</button>
+      </div>
+      <p class="muted">Compose files in this folder, run by the sandbox's own Docker.</p>
+      <div id="services-body"></div>
+      <div id="logs" hidden>
+        <div class="section-head">
+          <h3 id="logs-title">Logs</h3>
+          <button type="button" data-action="close-logs">Close</button>
+        </div>
+        <pre id="logs-body"></pre>
+      </div>
+    </section>
+
+    <section id="settings">
+      <h2>Sandbox settings</h2>
+      <div id="blocked" hidden>
+        <h3>Blocked hosts</h3>
+        <p class="muted">Something in the sandbox tried to reach these and the network policy refused. Allow one to add it to this environment's allowed hosts; it works right away.</p>
+        <ul id="blocked-list" class="plain"></ul>
+      </div>
+      <form id="settings-form">
+        <label>
+          <span>Extra allowed hosts</span>
+          <textarea name="allowDomains" rows="3" placeholder="example.com&#10;*.example.com"></textarea>
+          <small class="muted"><code>*.example.com</code> covers its subdomains but not <code>example.com</code> itself, so add both when you need both. <code>**.example.com</code> covers subdomains at any depth.</small>
+          <small class="muted" id="global-domains"></small>
+        </label>
+        <div class="row">
+          <label>
+            <span>CPUs</span>
+            <input name="cpus" type="number" min="1" max="64">
+          </label>
+          <label>
+            <span>Memory</span>
+            <input name="memory" placeholder="8g">
+          </label>
+        </div>
+        <p id="recreate" class="warn" hidden></p>
+        <div class="actions">
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="aws">
+      <h2>AWS</h2>
+      <p class="muted">Off unless you turn it on here. With a profile from this computer, its temporary credentials (about an hour) are written into the sandbox at each start and when you refresh; your SSO sign-in stays on this computer.</p>
+      <div id="aws-body"></div>
+    </section>
+
+    <section id="claude">
+      <div class="section-head">
+        <h2>Claude configuration</h2>
+        <button type="button" data-action="claude-update">Update from GitHub</button>
+      </div>
+      <p id="claude-repo" class="muted"></p>
+      <div class="columns">
+        <div>
+          <h3>Skills</h3>
+          <ul id="skills" class="toggles"></ul>
+        </div>
+        <div>
+          <h3>Rules</h3>
+          <ul id="rules" class="toggles"></ul>
+        </div>
+      </div>
+      <h3>Secrets</h3>
+      <p class="muted" id="secrets-note"></p>
+      <ul id="secrets" class="plain"></ul>
+    </section>
+
+    <section id="activity">
+      <h2>Activity</h2>
+      <ul id="events" class="plain mono"></ul>
+    </section>
+  </main>
+</body>
+</html>

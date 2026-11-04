@@ -6,11 +6,11 @@
 #                             repo's own install.sh, and points git at gh for GitHub credentials
 #   portable-setup update     lifecycle startup hook, as root, at every boot: fetches the repo and,
 #                             when GitHub has new commits, resets the clone to them and relinks
-#   portable-setup settings   from bin/portable through `sbx exec`, as the agent, with the Mac's
-#                             ~/.claude/settings.json on stdin: merges it into the sandbox's
-#   portable-setup aws        from bin/portable through `sbx exec`, as root, with `export AWS_...`
+#   portable-setup config     from the host through `sbx exec`, as root, with the skills and rules to
+#                             leave off on stdin (one per line): records them, then updates and relinks
+#   portable-setup aws        from the host through `sbx exec`, as root, with `export AWS_...`
 #                             lines on stdin: makes them the sandbox's AWS credentials
-#   portable-setup ports      from bin/portable through `sbx exec`, as root, with `SANDBOX MAC` port
+#   portable-setup ports      from the host's agent through `sbx exec`, as root, with `SANDBOX MAC` port
 #                             pairs on stdin: records where ports are reachable on the Mac
 #
 # The clone is root's and read-only to the agent, so a session can't edit it and leave changes that
@@ -23,8 +23,15 @@ agent_home="${PORTABLE_AGENT_HOME:-/home/$agent_user}"
 config_dir=$agent_home/claude-configuration
 state_dir=$agent_home/.claude
 persistent="${PORTABLE_PERSISTENT_FILE:-/etc/sandbox-persistent.sh}"
+# Skills and rules to leave off, as set on the environment's page. Kept in the sandbox so later boots
+# use it; until the page has set one, the list the sandbox was created with applies.
+disable_file="${PORTABLE_DISABLE_FILE:-/etc/portable/claude-config-disable}"
 
 warn() { echo "portable: $*" >&2; }
+
+disabled_names() {
+  if [ -f "$disable_file" ]; then tr '\n' ' ' < "$disable_file" | sed 's/ *$//'; else echo "${PORTABLE_CLAUDE_CONFIG_DISABLE:-}"; fi
+}
 
 # git on the clone as root, with root's HOME, so gh (the credential helper) keeps its files out of
 # the agent's home. Hooks only see the env vars the kit declares, so GH_TOKEN is passed on explicitly.
@@ -68,9 +75,25 @@ save_leftovers() {
   printf '%s' "$files" | sed 's/^/  /' >&2
 }
 
+# Rewrites the clone's CLAUDE.md and rules without the skills and rules in $1, from the committed
+# files, and records the list in the marker. Edits go to the clone's files, which ~/.claude links
+# to, so the links stay intact.
+apply_filter() {
+  local disabled="$1" marker="$config_dir/.git/portable-filtered" path
+  config_git checkout --quiet -- CLAUDE.md rules 2>/dev/null
+  for path in "$config_dir/CLAUDE.md" "$config_dir"/rules/*.md; do
+    [ -f "$path" ] || continue
+    filter_disabled "${path#"$config_dir/"}" "$disabled" < "$path" > "$path.tmp" && mv "$path.tmp" "$path"
+  done
+  echo "$disabled" > "$marker"
+  chown -R root:root "$config_dir"
+  chmod -R a+rX,go-w "$config_dir"
+}
+
 # Clones or updates the configuration repo (as root). Prints "changed" when files were replaced.
 sync_clone() {
-  local repo="${PORTABLE_CLAUDE_CONFIG_REPO:-}" disabled="${PORTABLE_CLAUDE_CONFIG_DISABLE:-}"
+  local repo="${PORTABLE_CLAUDE_CONFIG_REPO:-}" disabled
+  disabled="$(disabled_names)"
   local marker="$config_dir/.git/portable-filtered" refilter=""
   [ -n "$repo" ] || return 1
 
@@ -92,21 +115,9 @@ sync_clone() {
     refilter=1
   fi
   if [ "$(cat "$marker" 2>/dev/null)" != "$disabled" ]; then
-    config_git checkout --quiet -- CLAUDE.md rules 2>/dev/null
     refilter=1
   fi
-
-  if [ -n "$refilter" ]; then
-    # Edits go to the clone's files, which ~/.claude links to, so the links stay intact.
-    local path
-    for path in "$config_dir/CLAUDE.md" "$config_dir"/rules/*.md; do
-      [ -f "$path" ] || continue
-      filter_disabled "${path#"$config_dir/"}" "$disabled" < "$path" > "$path.tmp" && mv "$path.tmp" "$path"
-    done
-    echo "$disabled" > "$marker"
-  fi
-  chown -R root:root "$config_dir"
-  chmod -R a+rX,go-w "$config_dir"
+  [ -z "$refilter" ] || apply_filter "$disabled"
   [ -n "$refilter" ] && echo changed
   return 0
 }
@@ -118,7 +129,7 @@ link_config() {
   [ -d "$config_dir/.git" ] || return 0
   local name
   mkdir -p "$state_dir"
-  for name in ${PORTABLE_CLAUDE_CONFIG_DISABLE:-}; do echo "$name"; done > "$state_dir/personal-disabled"
+  for name in $(disabled_names); do echo "$name"; done > "$state_dir/personal-disabled"
   chown "$agent_user:$agent_user" "$state_dir" "$state_dir/personal-disabled"
   runuser -u "$agent_user" -- env HOME="$agent_home" CLAUDE_CONFIG_DIR="$state_dir" \
       CLAUDE_CONFIGURATION_DIR="$config_dir" bash "$config_dir/install.sh" 2>&1 \
@@ -135,7 +146,10 @@ cmd_install() {
     warn "no Claude configuration repo set (PORTABLE_CLAUDE_CONFIG_REPO); skipping"
     return 0
   fi
+  # A failed clone only warns (sync_clone says why): the sandbox works without the repo, and the
+  # startup hook tries again at the next boot.
   sync_clone >/dev/null && link_config
+  return 0
 }
 
 cmd_update() {
@@ -148,34 +162,24 @@ cmd_update() {
   fi
 }
 
-# Merges the Mac's ~/.claude/settings.json (on stdin) into the sandbox's, Mac values winning, except:
-#   - settings that run Mac commands or hold Mac-only auth (hooks, status line, credential helpers,
-#     Anthropic env overrides), dropped whole; the sandbox's own values for those stay, since Docker's
-#     Claude workload relies on them for proxy-managed sign-in
-#   - any other value mentioning a macOS path (/Users/..., /opt/homebrew/..., etc.), wherever it is,
-#     e.g. a permission rule or an additionalDirectories entry. Paths inside the workspace are kept,
-#     since it's mounted at the same path in here.
-cmd_settings() {
-  local file="$state_dir/settings.json" host tmp
-  host="$(cat)"
-  [ -n "$host" ] || return 0
-  [ -s "$file" ] || echo '{}' > "$file"
+# Records the skills and rules to leave off (names on stdin, one per line), then refilters and
+# relinks the configuration repo so new Claude sessions use the list. No fetch: the clone already
+# there is used, so a checkbox on the page doesn't wait on GitHub; the startup hook updates it.
+cmd_config() {
+  local name tmp
   tmp="$(mktemp)"
-  if jq --argjson host "$host" --arg ws "${WORKSPACE_DIR:-/nonexistent}" '
-      def host_path: type == "string"
-        and test("(^|[^A-Za-z0-9_.-])(/Users|/Applications|/Library|/System|/Volumes|/private|/opt/homebrew)(/|$)")
-        and (contains($ws) | not);
-      ($host
-        | del(.hooks, .statusLine, .apiKeyHelper, .awsAuthRefresh, .awsCredentialExport, .otelHeadersHelper)
-        | del(.env.ANTHROPIC_API_KEY, .env.ANTHROPIC_AUTH_TOKEN, .env.ANTHROPIC_BASE_URL, .env.CLAUDE_CODE_OAUTH_TOKEN)
-        | delpaths([paths(host_path)])) as $clean
-      | . * $clean' \
-      "$file" > "$tmp" 2>/dev/null; then
-    if cmp -s "$tmp" "$file"; then rm -f "$tmp"; else mv "$tmp" "$file"; fi
+  while IFS= read -r name; do
+    case "$name" in '' ) continue ;; *[!A-Za-z0-9_.-]*) warn "skipping '$name' (not a skill or rule name)"; continue ;; esac
+    echo "$name"
+  done > "$tmp"
+  mkdir -p "$(dirname "$disable_file")" && install -m 644 "$tmp" "$disable_file" && rm -f "$tmp"
+  [ -n "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ] || return 0
+  if [ -d "$config_dir/.git" ]; then
+    apply_filter "$(disabled_names)"
   else
-    rm -f "$tmp"
-    warn "couldn't merge the Mac's settings.json; keeping the sandbox's"
+    sync_clone >/dev/null || return 0
   fi
+  link_config
 }
 
 # Replaces portable's block in /etc/sandbox-persistent.sh with the `export AWS_...` lines on stdin
@@ -215,8 +219,8 @@ cmd_ports() {
 case "${1:-}" in
   install) cmd_install ;;
   update) cmd_update ;;
-  settings) cmd_settings ;;
+  config) cmd_config ;;
   aws) cmd_aws ;;
   ports) cmd_ports ;;
-  *) echo "usage: portable-setup install|update|settings|aws|ports" >&2; exit 2 ;;
+  *) echo "usage: portable-setup install|update|config|aws|ports" >&2; exit 2 ;;
 esac
