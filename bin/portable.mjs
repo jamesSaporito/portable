@@ -56,8 +56,10 @@ async function currentEnv(ctx, name) {
   return { env: loadEnv(ctx.paths, env.id), ws };
 }
 
-// Gets the environment's sandbox running with its settings applied and its page up.
-async function prepare(ctx, env, ws) {
+// Gets the environment's sandbox running with its settings applied and its page up. With
+// `openPage`, a sandbox it creates also gets its page opened in the browser, which keeps the token,
+// so the plain link /ui gives in the session works there afterwards.
+async function prepare(ctx, env, ws, { openPage = false } = {}) {
   const settings = settingsFor(ctx, env);
   const existing = await ctx.sbx.get(env.sandbox);
   if (!existing) {
@@ -82,8 +84,9 @@ async function prepare(ctx, env, ws) {
   for (const problem of problems) say(`${problem}; continuing`);
 
   const agent = await ensureAgent(ctx, env);
-  if (agent) say(`page: ${agent.url}`);
+  if (agent) say(`page: ${agent.url} (type /ui in Claude for the link)`);
   else say(`couldn't start the page; see ${ctx.paths.state}/${env.id}/agent.log`);
+  if (agent && openPage && !existing) await ctx.runner.run('open', [agent.url]);
   return env;
 }
 
@@ -115,7 +118,7 @@ export function claudeArgs(args) {
 async function runIn(ctx, name, command) {
   await ctx.sbx.ensure();
   const { env: found, ws } = await currentEnv(ctx, name);
-  const env = await prepare(ctx, found, ws);
+  const env = await prepare(ctx, found, ws, { openPage: true });
   const tty = process.stdin.isTTY ? ['-it'] : ['-i'];
   if (command.length === 0) {
     return ctx.runner.runInteractive('sbx', ['exec', ...tty, env.sandbox, 'bash']);
