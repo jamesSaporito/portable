@@ -60,7 +60,7 @@ config_git() { HOME=/root GH_TOKEN="${GH_TOKEN:-}" git -C "$config_dir" "$@"; }
 filter_disabled() {
   local name script=""
   for name in $2; do script="$script/\`$name\`/d;"; done
-  if [ "$1" = CLAUDE.md ]; then
+  if [ "$1" = global/CLAUDE.md ]; then
     sed "$script" | awk '/^[0-9]+\. / { sub(/^[0-9]+/, ++n) } !/^[0-9]+\. / { n = 0 } 1'
   else
     sed "$script"
@@ -74,7 +74,7 @@ save_leftovers() {
   filtered="$(cat "$config_dir/.git/portable-filtered" 2>/dev/null)"
   while IFS= read -r file; do
     case "$file" in
-      CLAUDE.md | rules/*.md)
+      global/CLAUDE.md | rules/*.md)
         config_git show "HEAD:$file" 2>/dev/null | filter_disabled "$file" "$filtered" \
           | cmp -s - "$config_dir/$file" && continue ;;
     esac
@@ -97,8 +97,8 @@ save_leftovers() {
 # to, so the links stay intact.
 apply_filter() {
   local disabled="$1" marker="$config_dir/.git/portable-filtered" path
-  config_git checkout --quiet -- CLAUDE.md rules 2>/dev/null
-  for path in "$config_dir/CLAUDE.md" "$config_dir"/rules/*.md; do
+  config_git checkout --quiet -- global/CLAUDE.md rules 2>/dev/null
+  for path in "$config_dir/global/CLAUDE.md" "$config_dir"/rules/*.md; do
     [ -f "$path" ] || continue
     filter_disabled "${path#"$config_dir/"}" "$disabled" < "$path" > "$path.tmp" && mv "$path.tmp" "$path"
   done
@@ -181,7 +181,7 @@ cmd_update() {
   local result
   result="$(sync_clone)" || return 0
   # Relink when files changed, or when the install never happened (e.g. the repo was unreachable then).
-  if [ "$result" = changed ] || [ "$(readlink "$state_dir/CLAUDE.md" 2>/dev/null)" != "$config_dir/CLAUDE.md" ]; then
+  if [ "$result" = changed ] || [ "$(readlink "$state_dir/CLAUDE.md" 2>/dev/null)" != "$config_dir/global/CLAUDE.md" ]; then
     link_config
   fi
 }

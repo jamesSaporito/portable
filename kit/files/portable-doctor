@@ -98,7 +98,7 @@ check_claude_config() {
     skip "no Claude configuration repo set (on the environment's page, or claudeConfigRepo in portable's config.json)"
   elif [ ! -d "$dir/.git" ]; then
     fail "your Claude configuration repo couldn't be downloaded (does the GitHub token include it?)"
-  elif [ "$(readlink "$CLAUDE_CONFIG_DIR/CLAUDE.md" 2>/dev/null)" != "$dir/CLAUDE.md" ]; then
+  elif [ "$(readlink "$CLAUDE_CONFIG_DIR/CLAUDE.md" 2>/dev/null)" != "$dir/global/CLAUDE.md" ]; then
     fail "your Claude configuration repo was downloaded but not installed (its install.sh didn't link CLAUDE.md)"
   else
     ok "your skills, rules and CLAUDE.md are installed (last change $(git -C "$dir" log -1 --format='%cr'))"
@@ -107,13 +107,13 @@ check_claude_config() {
     if [ "${behind:-0}" -gt 0 ]; then
       warn "your Claude configuration is $behind commit(s) behind GitHub; it updates at the next sandbox boot"
     fi
-    if [ -w "$dir" ] || [ -w "$dir/CLAUDE.md" ]; then
+    if [ -w "$dir" ] || [ -w "$dir/global/CLAUDE.md" ]; then
       fail "your Claude configuration's copy can be edited from in here, so a session's edits could block updates"
     else
       ok "your Claude configuration's copy is read-only in here (changes go through GitHub)"
     fi
     for name in ${PORTABLE_CLAUDE_CONFIG_DISABLE:-}; do
-      grep -q "\`$name\`" "$dir/CLAUDE.md" "$dir"/rules/*.md 2>/dev/null \
+      grep -q "\`$name\`" "$dir/global/CLAUDE.md" "$dir"/rules/*.md 2>/dev/null \
         && fail "your CLAUDE.md or rules still tell Claude to use $name, which PORTABLE_CLAUDE_CONFIG_DISABLE turns off"
     done
   fi
