@@ -14,7 +14,9 @@
 #              (latest versions from .../latest/version on 2026-10-30)
 
 # Debian stable (trixie) as of 2026-10-30: https://www.debian.org/releases/
-FROM debian:trixie-slim AS build
+# Pinned by digest (docker buildx imagetools inspect debian:trixie-slim, 2026-11-04) so every computer builds
+# the same image; bump the digest to pick up a newer trixie-slim.
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS build
 
 ARG TARGETARCH
 ARG TERRAFORM_VERSION=1.17.0

@@ -1,5 +1,5 @@
 # syntax=docker/sandbox-kit:3
-# portable's mixin for Docker Sandboxes (sbx). bin/portable adds it to Docker's Claude Code workload
+# portable's mixin for Docker Sandboxes (sbx). bin/portable.mjs adds it to Docker's Claude Code workload
 # (docker/sbx-kit-claude) with --kit. It brings the tools, portable's own skills and managed CLAUDE.md
 # as a filesystem overlay (portable.dockerfile), and declares what the sandbox may reach and do.
 # Spec: https://github.com/docker/sandbox-kit-spec (docs/spec/SPEC-v3.md)
@@ -7,14 +7,14 @@ schemaVersion: "3"
 kind: mixin
 displayName: portable
 description: Terraform, Infracost, AWS CLI, gh and pnpm for Claude Code, plus the user's Claude configuration repo
-version: "2.0.0"
-provides: ["portable@2.0.0"]
+version: "3.0.0"
+provides: ["portable@3.0.0"]
 licenses: [MIT]
 
 capabilities:
   # Outbound hosts, by name; the host-side proxy enforces this for the agent and for every container
-  # the sandbox's own Docker starts. Everything else is refused. Add project hosts with
-  # PORTABLE_ALLOW_DOMAINS in .env (bin/portable passes them to `sbx policy allow network`).
+  # the sandbox's own Docker starts. Everything else is refused. Project hosts are added per
+  # environment on its page or in config.json (`sbx policy allow network --sandbox`).
   - type: com.docker.sandbox/network-policy@2
     config:
       # While install hooks run (portable-setup install clones the configuration repo).
@@ -56,7 +56,7 @@ capabilities:
           - "*.amazonaws.com"
           - sts.amazonaws.com
 
-  # GitHub token from the Mac's Keychain, held by sbx and put on requests by the proxy; the sandbox
+  # GitHub token from the host's Keychain (macOS), held by sbx and put on requests by the proxy; the sandbox
   # only sees a placeholder in GH_TOKEN. install.sh registers the source:
   #   sbx secret set github --command 'security find-generic-password -s portable -a GH_TOKEN -w'
   # Optional, so a sandbox still starts without a token (then GitHub needs none, or fails).
@@ -91,7 +91,7 @@ capabilities:
           - { domain: uploads.github.com, header: Authorization, format: "Bearer %s" }
           - { domain: github.com, header: Authorization, scheme: basic, username: x-access-token }
 
-  # Infracost token (a personal access or service account token) from the Mac's Keychain, the same
+  # Infracost token (a personal access or service account token) from the host's Keychain (macOS), the same
   # way; the sandbox sees a placeholder in INFRACOST_CLI_AUTHENTICATION_TOKEN. install.sh registers
   # the source:
   #   sbx secret set infracost --command 'security find-generic-password -s portable -a INFRACOST_CLI_AUTHENTICATION_TOKEN -w'
@@ -110,16 +110,12 @@ capabilities:
           - { domain: pricing.api.infracost.io, header: Authorization, format: "Bearer %s" }
           - { domain: dashboard.api.infracost.io, header: Authorization, format: "Bearer %s" }
 
-  # Commits carry the Mac's git user.name and user.email (sbx reads the host's git config).
+  # Commits carry the host's git user.name and user.email (sbx reads the host's git config).
   - type: com.docker.sandbox/git-identity@1
     optional: true
     description: Attribute commits to the user's git identity
 
-  # Defaults for the microVM. Not configurable from .env yet (TODO.md).
-  - type: com.docker.sandbox/resources@1
-    config:
-      cpu: 4
-      memory: 8g
+  # No resources@1: CPUs and memory come per environment from `sbx create --cpus/--memory`.
 
   # Set up and keep the user's Claude configuration repo. The scripts come from the overlay.
   - type: com.docker.sandbox/lifecycle@1

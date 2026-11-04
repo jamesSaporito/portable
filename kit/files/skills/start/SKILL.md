@@ -23,7 +23,7 @@ cd "<project>" && docker compose up --build --detach
 - Allow up to 10 minutes; the first build can be slow.
 - Don't add `--wait`: one-shot services (e.g. an `install` step) exit and would make it fail.
 - Don't pass `-v`, change the project's compose file or `.env`, or run installs against the workspace directly.
-- If it fails, show the error. For a blocked host, point at `PORTABLE_ALLOW_DOMAINS` in portable's `.env`; for "port is already allocated", at whatever else in the sandbox (`docker ps`) uses that port.
+- If it fails, show the error. For a blocked host, point at the environment's page (`portable ui` on the host), where it can be allowed; for "port is already allocated", at whatever else in the sandbox (`docker ps`) uses that port.
 
 ## 3. Report
 
@@ -33,10 +33,10 @@ cd "<project>" && docker compose ps --all
 
 Give each service's state, and flag any that exited non-zero (show the last lines of `docker compose logs <service>`).
 
-Then the Mac URLs. portable forwards every port a container publishes to the Mac within a few seconds and records the mapping in `/etc/portable/ports` (`<sandbox port> <Mac port>` per line). Wait for it to list each port the stack publishes, up to about 20 seconds:
+Then the host URLs. portable forwards every port a container publishes to the host within a few seconds and records the mapping in `/etc/portable/ports` (`<sandbox port> <host port>` per line). Wait for it to list each port the stack publishes, up to about 20 seconds:
 
 ```sh
 for i in $(seq 20); do grep -qE '^<port> ' /etc/portable/ports 2>/dev/null && break; sleep 1; done; cat /etc/portable/ports
 ```
 
-Report each service's Mac URL, `http://localhost:<Mac port>`, and say when the Mac port differs from the sandbox port (another sandbox or Mac process had it). If a port never appears, say the stack is reachable in here only, and that running `portable ports` on the Mac forwards it.
+Report each service's host URL, `http://localhost:<host port>`, and say when the host port differs from the sandbox port (another sandbox or host process had it). If a port never appears, say the stack is reachable in here only, and that running `portable ports` on the host forwards it.

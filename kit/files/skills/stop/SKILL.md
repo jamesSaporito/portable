@@ -31,4 +31,4 @@ cd "<project>" && docker compose down
 cd "<project>" && docker compose ps --all
 ```
 
-Confirm nothing is left, or list what still is. portable drops the Mac-side forwards of ports that went away within a few seconds (`/etc/portable/ports` loses their lines), so there's nothing to clean up on the Mac.
+Confirm nothing is left, or list what still is. portable drops the host'side forwards of ports that went away within a few seconds (`/etc/portable/ports` loses their lines), so there's nothing to clean up on the host.
