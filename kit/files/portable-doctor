@@ -113,10 +113,10 @@ check_claude_config() {
   fi
 
   local skill missing=""
-  for skill in start stop; do
+  for skill in start stop ui; do
     [ -r "/etc/claude-code/.claude/skills/$skill/SKILL.md" ] || missing="$missing /$skill"
   done
-  if [ -z "$missing" ]; then ok "portable's own skills (/start, /stop) and managed CLAUDE.md are installed"
+  if [ -z "$missing" ]; then ok "portable's own skills (/start, /stop, /ui) and managed CLAUDE.md are installed"
   else fail "portable's own skills are missing or unreadable:$missing"; fi
   [ -r /etc/claude-code/CLAUDE.md ] || fail "portable's managed CLAUDE.md is missing"
 

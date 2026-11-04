@@ -23,7 +23,7 @@ cd "<project>" && docker compose up --build --detach
 - Allow up to 10 minutes; the first build can be slow.
 - Don't add `--wait`: one-shot services (e.g. an `install` step) exit and would make it fail.
 - Don't pass `-v`, change the project's compose file or `.env`, or run installs against the workspace directly.
-- If it fails, show the error. For a blocked host, point at the environment's page (`portable ui` on the host), where it can be allowed; for "port is already allocated", at whatever else in the sandbox (`docker ps`) uses that port.
+- If it fails, show the error. For a blocked host, point at the environment's page (the `ui` skill gives its link), where it can be allowed; for "port is already allocated", at whatever else in the sandbox (`docker ps`) uses that port.
 
 ## 3. Report
 

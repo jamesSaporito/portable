@@ -15,7 +15,7 @@ There's nothing to add to a project: an environment is just a folder. Its settin
 | Claude | Signed in once per computer with `/login`; sbx keeps the token on the host and puts it on requests to Anthropic. The sandbox sees a placeholder |
 | GitHub | A fine-grained token from your Keychain, limited to the repos you choose, added by the proxy to requests to GitHub. `gh` and `git` over HTTPS work; the sandbox sees a placeholder |
 | AWS | Off unless you turn it on for the environment, on its page. Then temporary credentials (about 1 hour) made from an AWS profile on your computer are written into the sandbox at each start and when you refresh. Your SSO login stays on the host |
-| Claude settings | Your skills, rules and `CLAUDE.md` from your configuration repo, with any you turned off on the environment's page left out. portable adds `/start` and `/stop`, which boot and stop a project's `docker compose` stack |
+| Claude settings | Your skills, rules and `CLAUDE.md` from your configuration repo, with any you turned off on the environment's page left out. portable adds `/start` and `/stop`, which boot and stop a project's `docker compose` stack, and `/ui`, which gives the link to the environment's page |
 | The internet | Only the hosts in `kit/portable.yaml` and the environment's allowed hosts (its page, plus `allowDomains` in `config.json` for every environment), by name. Everything else is refused, for Claude and for the containers it starts |
 
 ### Limits
@@ -148,7 +148,11 @@ Each `portable` prints the environment's page address (`page: http://127.0.0.1:<
 
 ### The environment page
 
-Every running environment has its own page on `127.0.0.1`, served by a small host agent that starts with the sandbox and stops with it. `portable ui` is the page-first way in: it creates or starts the environment like `portable` does, without opening a shell or Claude, and opens the page; `portable claude` later joins the same sandbox. Its port sticks like the forwarded ones, so a bookmark keeps working. It has:
+Every running environment has its own page on `127.0.0.1`, served by a small host agent that starts with the sandbox and stops with it. `portable ui` is the page-first way in: it creates or starts the environment like `portable` does, without opening a shell or Claude, and opens the page; `portable claude` later joins the same sandbox. Its port sticks like the forwarded ones, so a bookmark keeps working.
+
+From inside Claude, type `/ui`: it replies with the page's link, which you Cmd-click to open. The sandbox only knows the address, not the token; the browser remembers the token from the first time the page was opened with it. `portable claude` and `portable` open the page in your browser by themselves when they create the sandbox, so that's usually already done. If the page says the browser doesn't have its token yet, run `portable ui` once in the project's folder.
+
+The page has:
 
 - **Ports:** each forward, a link to open it, and its sticky host port, which you can change (the forward moves there right away, or as soon as the port is free) or forget. A host port another of the environment's ports, or another environment, already sticks to is refused.
 - **Services:** the compose files in the folder and the two levels below it, with their containers. Start (`docker compose up --build --detach`), restart and stop them, and follow their logs, all in the sandbox's own Docker.
@@ -297,7 +301,7 @@ It checks your computer first: sbx and its sign-in, that portable runs on its ow
 - **Sandbox:** runs as an ordinary user, sees only the folder it started in and nothing else on your computer.
 - **Credentials:** no real Claude or GitHub token is readable in the sandbox, and git is set to use the proxy-managed one.
 - **Tools:** the versions of Claude Code, git, gh, the AWS CLI, Terraform, pnpm, Docker and Compose.
-- **Claude configuration:** your skills, rules and `CLAUDE.md` are installed, read-only and current, portable's `/start` and `/stop` and managed `CLAUDE.md` are there, and the settings carry no macOS-only paths.
+- **Claude configuration:** your skills, rules and `CLAUDE.md` are installed, read-only and current, portable's `/start`, `/stop` and `/ui` and managed `CLAUDE.md` are there, and the settings carry no macOS-only paths.
 - **Access:** Claude answers a one-line prompt, GitHub accepts the token, and AWS answers `sts get-caller-identity` when a profile is set.
 - **Docker:** the sandbox's engine pulls from Docker Hub, containers it starts see the workspace folder and nothing else, and their ports are on `localhost`.
 - **Ports and the page:** a port a test container publishes is forwarded to the host, answers there and is closed again when the container goes; the environment page starts, answers with its token and refuses a request without it.
