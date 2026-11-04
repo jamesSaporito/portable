@@ -8,8 +8,8 @@
 #      Sandboxes (sbx), with Homebrew first if it's needed for that; then signs in to Docker
 #   2. links `portable` into ~/.local/bin and adds that folder to PATH in your shell's rc file
 #   3. creates the settings folder (~/.config/portable): from your settings repo when given
-#      (--settings URL, or PORTABLE_SETTINGS_REPO), else config.json from the defaults and an older
-#      portable's .env; asks for your Claude configuration repo if none is set
+#      (--settings URL, or PORTABLE_SETTINGS_REPO), else config.json from the defaults; asks for your
+#      Claude configuration repo if none is set
 #   4. runs `portable configure` (only in a terminal), which asks for the GitHub and Infracost tokens;
 #      they go in the Keychain, and sbx is told to read them from there
 set -euo pipefail
@@ -63,12 +63,6 @@ install_copy() {
     mkdir -p "$(dirname "$PORTABLE_INSTALL_DIR")"
     git clone --quiet "$url" "$PORTABLE_INSTALL_DIR"
     echo "Installed portable from $url in $PORTABLE_INSTALL_DIR"
-  fi
-  # Settings used to live in the clone; portable moves an .env in the settings folder to config.json.
-  if [ -f "$PORTABLE_ROOT/.env" ] && [ ! -f "$CONFIG_DIR/.env" ] && [ ! -f "$CONFIG_DIR/config.json" ]; then
-    mkdir -p "$CONFIG_DIR"
-    mv "$PORTABLE_ROOT/.env" "$CONFIG_DIR/.env"
-    echo "Moved your settings from $PORTABLE_ROOT/.env to $CONFIG_DIR"
   fi
   exec "$PORTABLE_INSTALL_DIR/install.sh" ${SETTINGS_REPO:+--settings "$SETTINGS_REPO"} "$@"
 }
@@ -237,9 +231,8 @@ with_config() {
 }
 
 # The settings folder: cloned from the settings repo when one is given and there's nothing there
-# yet (or pulled when it's already that clone), else config.json made from the defaults and an older
-# portable's .env, which is left in place for that version. Then asks for the Claude configuration
-# repo when none is set.
+# yet (or pulled when it's already that clone), else config.json made from the defaults. Then asks
+# for the Claude configuration repo when none is set.
 create_config() {
   local repo="" current
   if [ -n "$SETTINGS_REPO" ]; then
