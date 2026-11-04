@@ -211,12 +211,18 @@ link_command() {
 
   local rc line='export PATH="$HOME/.local/bin:$PATH"'
   rc="$(rc_file)"
-  if grep -qxF "$line" "$rc" 2>/dev/null; then
+  # Only the startup files a new terminal reads count, not this shell's PATH: it may still have
+  # ~/.local/bin from before an uninstall removed the line, or from whatever started this script.
+  local files
+  case "$(basename "${SHELL:-}")" in
+    zsh) files=("$HOME/.zshenv" "$HOME/.zprofile" "$HOME/.zshrc") ;;
+    bash) files=("$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile") ;;
+    *) files=("$HOME/.profile") ;;
+  esac
+  if grep -qsE '^[^#]*PATH=.*(\$HOME|\$\{HOME\}|~)/\.local/bin' "${files[@]}" \
+    || grep -qsE "^[^#]*PATH=.*$HOME/\\.local/bin" "${files[@]}"; then
     return
   fi
-  case ":$PATH:" in
-    *":$bin_dir:"*) return ;;
-  esac
   printf '\n# Added by portable/install.sh\n%s\n' "$line" >> "$rc"
   echo "Added ~/.local/bin to PATH in $rc (open a new terminal to use it)"
 }
