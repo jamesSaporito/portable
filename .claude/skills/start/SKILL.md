@@ -9,9 +9,8 @@ Runs the project's `docker compose up` through `bin/portable`, so it goes to the
 
 ## 1. Pick the project
 
-- Read the workspace folder from `WORKSPACE_DIR` in portable's settings, `~/.config/portable/.env` (only that line), expanding `~`.
-- If the user named a folder (`/start api`), use `$WORKSPACE_DIR/<folder>`.
-- Otherwise, if `$WORKSPACE_DIR` has a compose file (`compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`), use it.
+- If the user named a folder (`/start api`), use that folder, relative to the current one.
+- Otherwise, if the current folder has a compose file (`compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`), use it.
 - Otherwise list the subfolders that have one and ask which. Stop if there are none.
 
 ## 2. Boot it
@@ -25,7 +24,7 @@ cd "<project>" && portable docker compose up --build --detach
 - Allow up to 10 minutes; the first build, and creating the sandbox the first time, can be slow.
 - Don't add `--wait`: one-shot services (e.g. an `install` step) exit and would make it fail.
 - Don't pass `-v`, change the project's compose file or `.env`, or run installs on the Mac.
-- If it fails, show the error. For a blocked host, point at `PORTABLE_ALLOW_DOMAINS`; for "port is already allocated", at whatever else in that sandbox uses the port.
+- If it fails, show the error. For a blocked host, point at **Extra allowed hosts** on the environment's page (`portable ui`); for "port is already allocated", at whatever else in that sandbox uses the port.
 
 ## 3. Report
 

@@ -10,7 +10,7 @@ There's nothing to add to a project: an environment is just a folder. Its settin
 
 | | Inside the sandbox |
 |---|---|
-| Your files | Only the folder you run `portable` in, which must be your workspace folder (`workspaceDir`, default `~/Projects/sandboxed`) or a folder inside it (see [Choosing what Claude can see](#choosing-what-claude-can-see)). It's mounted at the same path it has on your computer, so paths match on both sides. Nothing else on your computer: no home folder, `~/.ssh`, `~/.aws` or Docker socket. Containers Claude starts see the same folder and nothing else |
+| Your files | Only the folder you run `portable` in, any project folder (see [Choosing what Claude can see](#choosing-what-claude-can-see)). It's mounted at the same path it has on your computer, so paths match on both sides. Nothing else on your computer: no home folder, `~/.ssh`, `~/.aws` or Docker socket. Containers Claude starts see the same folder and nothing else |
 | Docker | The sandbox's own engine, inside the VM. Images, containers and volumes stay in the sandbox until you delete it |
 | Claude | Signed in once per computer with `/login`; sbx keeps the token on the host and puts it on requests to Anthropic. The sandbox sees a placeholder |
 | GitHub | A fine-grained token from your Keychain, limited to the repos you choose, added by the proxy to requests to GitHub. `gh` and `git` over HTTPS work; the sandbox sees a placeholder |
@@ -117,7 +117,7 @@ The proxy adds it to requests to Infracost and the sandbox sees a placeholder, s
 
 | Setting | What it does | Per environment |
 |---|---|---|
-| `workspaceDir` | The most a sandbox can see: all your projects, e.g. `~/Projects`. Each session sees only the folder it's started in, here or below (see [Choosing what Claude can see](#choosing-what-claude-can-see)). `portable` refuses to start if it's `/`, `/Users`, your home folder, inside this project or your Claude configuration repo, or a path that would cover a system folder in the sandbox | No |
+| `workspaceDir` | Optional. Empty (the default) lets `portable` run in any project folder. Set it, e.g. to `~/Projects`, to only allow that folder and the ones inside it (see [Choosing what Claude can see](#choosing-what-claude-can-see)). `portable` refuses a value that holds your home folder, is inside your home's settings (`~/.config`, `~/Library` and other dot folders), this project or your Claude configuration repo, or would cover a system folder in the sandbox | No |
 | `claudeConfigRepo` | Your Claude configuration repo. Cloned when a sandbox is created, installed with its own `install.sh`, updated at every boot | No |
 | `claudeConfigDisable` | Skills or rules to turn off in sandboxes, e.g. `["docker-ports"]`. Lines naming them are removed from the sandbox's `CLAUDE.md` and rules | Yes, as checkboxes on the page |
 | `allowDomains` | Extra hosts sandboxes may reach, e.g. `["pypi.org"]` | Yes, added to these |
@@ -171,14 +171,14 @@ The first `portable` in a folder creates its sandbox, which takes a few minutes 
 
 ### Choosing what Claude can see
 
-A session sees only the folder you run `portable` in, which has to be your workspace folder or a folder inside it. Change folders to change how much Claude can reach:
+A session sees only the folder you run `portable` in. Change folders to change how much Claude can reach:
 
 ```sh
 cd ~/Projects && portable claude          # every project, one sandbox for all of them
 cd ~/Projects/my-app && portable claude   # only my-app, in its own sandbox
 ```
 
-Run from anywhere else, `portable` refuses to start. It also refuses to start inside the copy of portable that's running, or inside the configuration repo your computer's `~/.claude` links into, since a session there could change what your computer runs; the installed copies of both live outside any workspace, so that only matters when you run a clone directly.
+`portable` refuses to start in a folder that holds your home folder (your home itself, `/Users`, `/`), in your home's settings (`~/.ssh`, `~/.aws`, `~/.config`, `~/Library` and other dot folders), and outside `workspaceDir` when you've set one. It also refuses to start inside the copy of portable that's running, or inside the configuration repo your computer's `~/.claude` links into, since a session there could change what your computer runs; the installed copies of both live outside any workspace, so that only matters when you run a clone directly.
 
 Claude Code asks whether you trust a folder the first time it opens one. That prompt is left on purpose. Claude also asks before running commands and editing files, since a sandbox limits what Claude can reach but not what it spends (a background process can keep calling paid APIs). Docker's Claude workload would start it with `--dangerously-skip-permissions`, and flags given to `sbx run` are only added after that one, so `portable claude` starts Claude with `sbx exec` and its own flags instead. Pass a permission flag yourself to choose another mode, e.g. `portable claude --permission-mode acceptEdits`, or `portable claude --dangerously-skip-permissions` for no prompts.
 
@@ -194,7 +194,7 @@ Each folder has one sandbox; `portable` in the same folder joins it, from as man
 **Same repo, separate work:** give each agent its own git worktree. The repo needs at least one commit.
 
 ```sh
-cd ~/Projects/my-app                  # inside your workspace folder
+cd ~/Projects/my-app
 portable claude --worktree feat-auth  # terminal 1
 portable claude --worktree fix-login  # terminal 2
 ```
@@ -233,12 +233,12 @@ When a sandbox boots:
 
 Your computer's `~/.claude` links into the configuration repo's installed copy in `~/.local/share/claude-configuration`, outside any workspace, so changes go through GitHub:
 
-1. Work in a clone in your workspace folder, e.g. `~/Projects/claude-configuration` (or let Claude clone it in the sandbox), make the change, and push a branch or open a PR. The sandbox's `CLAUDE.md` tells Claude to do this.
+1. Work in a clone, e.g. `~/Projects/claude-configuration` (or let Claude clone it in the sandbox), make the change, and push a branch or open a PR. The sandbox's `CLAUDE.md` tells Claude to do this.
 2. Merge it.
 3. On your computer, run `./install.sh update` in your clone, then start new Claude sessions.
 4. The next sandbox boot picks it up in the sandbox (`portable stop NAME` then `portable` forces one).
 
-If `~/.claude` still links into a clone inside the workspace folder (installed before the configuration repo had an installed copy), `portable` refuses to start in it; run its `install.sh` once to switch to the installed copy.
+If `~/.claude` still links into a clone in your projects (installed before the configuration repo had an installed copy), `portable` refuses to start in it; run its `install.sh` once to switch to the installed copy.
 
 ### Node
 
@@ -279,7 +279,7 @@ Lists the new commits on GitHub and moves the installed copy forward to them. It
 
 The version is `version` in `package.json`; bump it when a change is worth telling apart (`portable -v` shows the commit as well, so it isn't needed for every merge). `npm test` runs the tests (Node's built-in runner, no dependencies) and `npm run lint` checks the syntax of every script. They need a Node on your `PATH`; portable's own is at `~/.local/share/portable-node/current/bin`.
 
-Work in a clone in your workspace folder (e.g. `~/Projects/portable`), in portable like any other project, and merge the change on GitHub. Then `portable update` brings it to the installed copy. Nothing a session writes reaches the launcher you run until you've merged it; see [Limits](#limits) for protecting the branch.
+Work in a clone (e.g. `~/Projects/portable`), in portable like any other project, and merge the change on GitHub. Then `portable update` brings it to the installed copy. Nothing a session writes reaches the launcher you run until you've merged it; see [Limits](#limits) for protecting the branch.
 
 To try a change before merging, run the clone directly on your computer, e.g. `~/Projects/portable/bin/portable.mjs doctor` (`portable doctor` warns that it's not the installed copy). That runs outside the sandbox, so read what a session changed first, as you would a pull request.
 
@@ -323,8 +323,9 @@ One thing it can't check without changing a repo: pushing. Push a branch to a re
 | GitHub answers 401 or "Invalid username or token" | The token expired or was revoked: make a new one, `portable configure` and replace it, then `portable rm` the sandbox |
 | Claude asks to sign in, or doctor says it didn't answer | Run `portable claude` and `/login` once on this computer (step 2) |
 | `couldn't clone ... (is a GitHub token stored, and does it include this repo?)` | Add the configuration repo to your token's repository access, then `portable rm` the sandbox |
-| `the workspace folder (...) is inside portable ...`, `is too broad` or `would cover a system folder` | Point `workspaceDir` in `config.json` at a dedicated folder |
-| `run it from the workspace folder (...) or a folder in it` | `cd` into a project in your workspace folder first. `portable doctor` works from anywhere |
+| `the workspace folder (...) is inside portable ...`, `is too broad` or `would cover a system folder` | Point `workspaceDir` in `config.json` at a dedicated folder, or set it to `""` |
+| `... is too broad` or `... holds your computer's settings or secrets` | `cd` into a project folder first. `portable doctor` works from anywhere |
+| `run it from the workspace folder (...) or a folder in it` | `cd` into a project in the `workspaceDir` folder, or set `workspaceDir` to `""` in `config.json` to allow any folder |
 | `... is the copy of portable that's running` | You ran a clone of portable directly from inside itself. Use the installed `portable` to work on the clone |
 | `... is your Claude configuration repo` | Run its `install.sh` to switch to its installed copy, as the message shows |
 | `couldn't get AWS credentials for profile ...` | The profile is signed out: click **Sign in** in the page's AWS section, or run `aws sso login --profile <name>` |

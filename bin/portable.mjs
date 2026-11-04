@@ -38,17 +38,17 @@ function usage(text) {
   throw new UserError(`usage: ${text}`);
 }
 
-// The workspace folder, checked and created.
+// The workspace folder, checked and created, or null when workspaceDir isn't set.
 function workspace(ctx) {
   const ws = workspaceFolder(ctx.global.workspaceDir, ctx.paths.home, ctx.folders);
-  fs.mkdirSync(ws, { recursive: true });
+  if (ws) fs.mkdirSync(ws, { recursive: true });
   return ws;
 }
 
 // The environment for the current folder (or --name), saved on first use.
 async function currentEnv(ctx, name) {
   const ws = workspace(ctx);
-  const folder = sessionFolder(process.cwd(), ws, ctx.folders);
+  const folder = sessionFolder(process.cwd(), ws, ctx.folders, ctx.paths.home);
   const sandboxes = await ctx.sbx.list();
   if (!sandboxes) throw new UserError("sbx didn't answer (sbx ls failed); is its daemon running? Try: sbx ls");
   const env = resolveEnv({ paths: ctx.paths, folder, name, sandboxes });

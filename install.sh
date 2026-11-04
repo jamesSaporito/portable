@@ -283,4 +283,4 @@ link_command
 create_config
 offer_aws
 offer_secrets
-echo "Done. Run 'portable claude' in a folder in your workspace; the first time on this computer, sign in to Claude with /login. 'portable ui' opens the folder's page."
+echo "Done. Run 'portable claude' in a project folder; the first time on this computer, sign in to Claude with /login. 'portable ui' opens the folder's page."
