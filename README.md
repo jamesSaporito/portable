@@ -77,7 +77,7 @@ cd ~/path/to/this/repo
    Say no to any of them and it stops, telling you what to install yourself. Run without a terminal (e.g. from a script), it installs nothing and stops at the first thing that's missing.
 3. Links the `portable` command (`bin/portable`, which starts portable on its own Node) into `~/.local/bin` and adds that folder to your PATH in your shell's rc file.
 4. Creates `~/.config/portable/config.json` from the defaults, or clones your settings repo when you pass `--settings URL` (see [Carrying settings to another Mac](#carrying-settings-to-another-mac)), and asks for your Claude configuration repo if none is set. If an AWS profile is set and the AWS CLI is missing, offers `brew install awscli` on macOS.
-5. Runs `portable configure`, which asks for the GitHub token and the optional Infracost token (step 3 below). They go in the Keychain, and sbx is told to read them from there.
+5. Runs `portable configure`, which offers to store the GitHub and Infracost tokens (step 3 below; both optional). They go in the Keychain, and sbx is told to read them from there.
 
 Open a **new terminal** afterwards so `portable` is on your PATH.
 
@@ -87,7 +87,9 @@ The first time you run `portable claude` on a computer, type `/login` and sign i
 
 To use an API key instead (billed per use in the [Claude Console](https://platform.claude.com)), store it with sbx: `sbx secret set anthropic`. It's handled the same way.
 
-### 3. GitHub token
+### 3. Tokens (optional)
+
+Every token is optional. Without the GitHub one, public repos (your configuration repo included, if it's public) still clone, but `git push` and `gh` in the sandbox need it. Store or replace them any time with `portable configure`.
 
 1. On GitHub, go to **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token** ([GitHub docs](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)).
 2. **Resource owner:** your account. **Expiration:** pick a limit, for example 90 days.
@@ -99,7 +101,7 @@ To use an API key instead (billed per use in the [Claude Console](https://platfo
    portable configure
    ```
 
-   It goes through each secret portable uses and says whether it's stored. For a missing one it asks "Store it now?" (yes by default for the GitHub token, no for the optional Infracost one), prints where to make it, and opens the Keychain's hidden prompt, which asks for the value twice. Stored ones can be replaced; one that's stored but that sbx isn't reading yet is fixed without asking. It also says whether Claude is signed in. Run it again any time, e.g. when a token expires; `portable secret set GH_TOKEN` stores a single one directly.
+   It goes through each secret portable uses and says whether it's stored. For a missing one it asks "Store it now? [y/N]", prints where to make it, and opens the Keychain's hidden prompt, which asks for the value twice. Stored ones can be replaced; one that's stored but that sbx isn't reading yet is fixed without asking. It also says whether Claude is signed in. Run it again any time, e.g. when a token expires; `portable secret set GH_TOKEN` stores a single one directly.
 
 A fine-grained token can reach one owner only (your account or one organization). It can't push to repos where you're an outside collaborator. See [Limits](#limits) for why the default branches of this repo and the configuration repo should be protected.
 
@@ -317,7 +319,7 @@ One thing it can't check without changing a repo: pushing. Push a branch to a re
 | `Docker Sandboxes (sbx) isn't installed` | Run `install.sh`, or `brew trust docker/tap && brew install docker/tap/sbx` |
 | `sbx ... is too old` | `brew upgrade sbx` |
 | `signing in to Docker (sbx login)` | Finish the sign-in in the browser; sbx needs a Docker account |
-| `no GitHub token stored` | `portable configure`, then `portable rm` the sandbox so it binds the token |
+| `no GitHub token stored (optional)` in `portable doctor` | Fine without one for public repos; to push or use `gh`, `portable configure`, then `portable rm` the sandbox so it binds the token |
 | GitHub answers 401 or "Invalid username or token" | The token expired or was revoked: make a new one, `portable configure` and replace it, then `portable rm` the sandbox |
 | Claude asks to sign in, or doctor says it didn't answer | Run `portable claude` and `/login` once on this computer (step 2) |
 | `couldn't clone ... (is a GitHub token stored, and does it include this repo?)` | Add the configuration repo to your token's repository access, then `portable rm` the sandbox |
