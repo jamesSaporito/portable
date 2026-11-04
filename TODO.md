@@ -23,8 +23,7 @@
 - Review item 2: consider a separate Mac-only token for the `portable` and `claude-configuration` repos so the session token can't push to them at all (needs the sandbox's config clone to use a read-only route)
 - Review item 3: check from a sandbox that services on the Mac's localhost (`host.docker.internal`, the gateway IP) are refused, and that DNS can't be used to reach arbitrary hosts
 - Review item 7: nothing stops a session writing `.git/hooks` or `.git/config` in the workspace; only the README warns. Consider a check that lists changed hooks after a session
-- Infracost sends a usage event to `pricing.api.infracost.io/event` on every command and v2.18.3 has no switch for it outside self-hosted pricing mode; revisit if that matters
-- Only the Terraform, Terraform-plan and AWS Infracost plugins are baked in; add Terragrunt/CloudFormation/Google/Azure to `kit/portable.dockerfile` if a project needs them
+- Infracost was taken out of the sandbox for now (2026-11-04); bring it back from git history (`kit/portable.dockerfile`, the kit's credential and allowed hosts, doctor, configure) if needed. Its CLI sent a usage event to `pricing.api.infracost.io/event` on every command with no switch outside self-hosted pricing mode
 - Once these changes are on GitHub's main, run `./install.sh` from `~/Projects/portable` to switch to the installed copy in `~/.local/share/portable`
 - Run `portable update` once for real after a merge (only tested against a local stand-in for GitHub)
 - Try `/start` and `/stop` on Portfolio2 once, from the Mac and in a session, now that they go through `sbx exec`

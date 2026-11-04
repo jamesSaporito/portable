@@ -28,7 +28,7 @@ const USAGE = `Runs a command in the sandbox for the current folder, or a shell 
   portable update                      -> update the installed copy from GitHub
   portable configure                   -> store the secrets portable needs, prompting for each
   portable -v                          -> show portable's version and the commit it runs from
-  portable secret set|rm NAME          -> store or remove one secret (GH_TOKEN, INFRACOST_CLI_AUTHENTICATION_TOKEN)
+  portable secret set|rm NAME          -> store or remove one secret (GH_TOKEN)
   portable doctor --no-sandbox         -> the checks on this computer only`;
 
 const say = (message) => process.stderr.write(`portable: ${message}\n`);

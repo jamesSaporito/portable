@@ -6,7 +6,7 @@
 schemaVersion: "3"
 kind: mixin
 displayName: portable
-description: Terraform, Infracost, AWS CLI, gh and pnpm for Claude Code, plus the user's Claude configuration repo
+description: Terraform, AWS CLI, gh and pnpm for Claude Code, plus the user's Claude configuration repo
 version: "3.0.0"
 provides: ["portable@3.0.0"]
 licenses: [MIT]
@@ -37,12 +37,6 @@ capabilities:
           # Terraform providers and modules
           - registry.terraform.io
           - releases.hashicorp.com
-          # Infracost's pricing (and events) and dashboard (and agents) APIs, its defaults in:
-          # https://github.com/infracost/cli/blob/v2.18.3/internal/config/config.go
-          # https://github.com/infracost/cli/blob/v2.18.3/internal/api/dashboard/config.go
-          # Plugins are baked in (portable.dockerfile), so releases.infracost.io isn't needed.
-          - pricing.api.infracost.io
-          - dashboard.api.infracost.io
           # Docker Hub, for images the sandbox's Docker pulls: https://docs.docker.com/desktop/setup/allow-list/
           - registry-1.docker.io
           - auth.docker.io
@@ -90,25 +84,6 @@ capabilities:
           - { domain: api.github.com, header: Authorization, format: "Bearer %s" }
           - { domain: uploads.github.com, header: Authorization, format: "Bearer %s" }
           - { domain: github.com, header: Authorization, scheme: basic, username: x-access-token }
-
-  # Infracost token (a personal access or service account token) from the host's Keychain (macOS), the same
-  # way; the sandbox sees a placeholder in INFRACOST_CLI_AUTHENTICATION_TOKEN. install.sh registers
-  # the source:
-  #   sbx secret set infracost --command 'security find-generic-password -s portable -a INFRACOST_CLI_AUTHENTICATION_TOKEN -w'
-  # The CLI uses that token as-is, with no local check, as an OAuth bearer token:
-  # https://github.com/infracost/cli/blob/v2.18.3/pkg/auth/config.go (login) and pkg/auth/token.go
-  - type: com.docker.sandbox/credential@1
-    optional: true
-    description: Infracost token for cost estimates
-    config:
-      service: infracost
-      phase: runtime
-      apiKey:
-        name: INFRACOST_CLI_AUTHENTICATION_TOKEN
-        proxyManaged: true
-        inject:
-          - { domain: pricing.api.infracost.io, header: Authorization, format: "Bearer %s" }
-          - { domain: dashboard.api.infracost.io, header: Authorization, format: "Bearer %s" }
 
   # Commits carry the host's git user.name and user.email (sbx reads the host's git config).
   - type: com.docker.sandbox/git-identity@1

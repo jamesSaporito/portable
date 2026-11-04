@@ -9,9 +9,6 @@
 #   gh:        https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_checksums.txt
 #   pnpm:      https://api.github.com/repos/pnpm/pnpm/releases/tags/v12.16.1 (asset digests)
 #   AWS CLI:   https://awscli.amazonaws.com/awscli-exe-linux-<arch>-2.39.0.zip
-#   Infracost: https://github.com/infracost/cli/releases/download/v2.18.3/infracost-linux-<arch>.tar.gz.sha256
-#   Infracost plugins: https://releases.infracost.io/<plugin>/linux/<arch>/v<version>/data.tar.gz.sha256
-#              (latest versions from .../latest/version on 2026-10-30)
 
 # Debian stable (trixie) as of 2026-10-30: https://www.debian.org/releases/
 # Pinned by digest (docker buildx imagetools inspect debian:trixie-slim, 2026-11-04) so every computer builds
@@ -23,10 +20,6 @@ ARG TERRAFORM_VERSION=1.17.0
 ARG GH_VERSION=2.103.3
 ARG PNPM_VERSION=12.16.1
 ARG AWS_CLI_VERSION=2.39.0
-ARG INFRACOST_VERSION=2.18.3
-ARG INFRACOST_TERRAFORM_VERSION=0.0.92
-ARG INFRACOST_TERRAFORM_PLAN_VERSION=0.0.37
-ARG INFRACOST_AWS_VERSION=0.0.31
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl unzip \
@@ -76,33 +69,6 @@ RUN case "$TARGETARCH" in arm64) a=aarch64 ;; amd64) a=x86_64 ;; esac \
  && ln -s /usr/local/aws-cli/v2/current/bin/aws_completer /out/usr/local/bin/aws_completer \
  && rm -rf /tmp/aws /tmp/awscli.zip
 
-# Infracost, and the plugins it parses Terraform and prices AWS with. The CLI would download the
-# latest plugins at run time and keep updating them; baking pinned ones in and pointing
-# INFRACOST_CLI_PLUGIN_DIR at them (ENV below) turns that off. Plugin layout and the plugin dir
-# override: https://github.com/infracost/cli/blob/v2.18.3/pkg/plugins/install.go and
-# https://github.com/infracost/cli/blob/v2.18.3/pkg/plugins/config.go
-RUN fetch "https://github.com/infracost/cli/releases/download/v${INFRACOST_VERSION}/infracost-linux-${TARGETARCH}.tar.gz" /tmp/infracost.tgz \
-      8aae48dde9d0c3cb2e555306ff4e01eb624a704ebefd576e4fce1c8e6071ec9a \
-      0950674d6e19eee5c492e59b415f3078c7c6b72421f940543c6cfa884692874e \
- && tar -xzf /tmp/infracost.tgz -C /out/usr/local/bin infracost && rm /tmp/infracost.tgz
-COPY <<'EOF' /usr/local/bin/fetch-plugin
-#!/bin/sh
-# fetch-plugin NAME VERSION SHA256_ARM64 SHA256_AMD64
-set -eu
-fetch "https://releases.infracost.io/$1/linux/$TARGETARCH/v$2/data.tar.gz" /tmp/plugin.tgz "$3" "$4"
-tar -xzf /tmp/plugin.tgz -C /out/usr/local/lib/infracost/plugins "$1" && rm /tmp/plugin.tgz
-EOF
-RUN chmod 755 /usr/local/bin/fetch-plugin && mkdir -p /out/usr/local/lib/infracost/plugins \
- && fetch-plugin infracost-parser-terraform "$INFRACOST_TERRAFORM_VERSION" \
-      90878521d6e4ef2561bd4a99377b21bb1daabe0320cf57ffb46b533e84c0bf80 \
-      7fe12728cc55b0c45c6ce6129b83f9805f89361a5d34fac787005b26ac052533 \
- && fetch-plugin infracost-parser-terraform-plan "$INFRACOST_TERRAFORM_PLAN_VERSION" \
-      bc5ba09b213e98d4b9ec661320089687693dc54ba0ce24c06effe79d95f9a74a \
-      61a7c6363a04bc8270265b80c36fc4c87e18d6758bee564ad9116734012cbd8e \
- && fetch-plugin infracost-provider-aws "$INFRACOST_AWS_VERSION" \
-      da71ab5c347bf18d21769bb431d335ccb3337cb2432d1896d5a97053c7e76c0a \
-      eebaddd736b2854d60c87a318be5b5494bb0609fb3617c44e0c3de59811aa8b0
-
 # portable's scripts, managed CLAUDE.md and skills. Claude Code loads /etc/claude-code/CLAUDE.md
 # before the user's and it can't be excluded: https://code.claude.com/docs/en/memory
 COPY --chmod=755 files/portable-setup files/portable-doctor /out/usr/local/bin/
@@ -114,9 +80,3 @@ RUN chmod 755 /out/etc && chmod -R u=rwX,go=rX /out/etc/claude-code && chown -R 
 
 FROM scratch
 COPY --from=build /out/ /
-# A mixin's ENV is merged into the sandbox (kit spec §10). Infracost loads only the baked-in plugins
-# and skips its self-update and agent-skill checks, which would reach releases.infracost.io:
-# https://github.com/infracost/cli/blob/v2.18.3/internal/update/check.go
-ENV INFRACOST_CLI_PLUGIN_DIR=/usr/local/lib/infracost/plugins \
-    INFRACOST_SKIP_UPDATE_CHECK=1 \
-    INFRACOST_SKIP_AGENT_CHECK=1
