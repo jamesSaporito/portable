@@ -155,15 +155,25 @@ remove_install() {
     if ask "Delete the installed copy of portable in $PORTABLE_INSTALL_DIR? A reinstall clones it again."; then
       rm -rf "$PORTABLE_INSTALL_DIR"
       echo "Deleted $PORTABLE_INSTALL_DIR"
+    else
+      echo "Kept $PORTABLE_INSTALL_DIR"
     fi
   fi
   if [ -d "$NODE_DIR" ]; then
     rm -rf "$NODE_DIR"
     echo "Deleted portable's Node ($NODE_DIR)"
   fi
-  if [ -d "$CONFIG_DIR" ] && ask "Delete your settings in $CONFIG_DIR (config.json, and each environment's settings and ports)?"; then
+  if [ ! -d "$CONFIG_DIR" ]; then
+    rm -rf "$STATE_DIR"
+  elif ask "Delete your settings in $CONFIG_DIR (config.json, and each environment's settings and ports)?"; then
     rm -rf "$CONFIG_DIR" "$STATE_DIR"
+    if [ -e "$CONFIG_DIR" ]; then
+      echo "Couldn't delete $CONFIG_DIR; delete it yourself: rm -rf '$CONFIG_DIR'" >&2
+      return 1
+    fi
     echo "Deleted $CONFIG_DIR and $STATE_DIR"
+  else
+    echo "Kept your settings in $CONFIG_DIR; a reinstall uses them. Delete them later with: rm -rf '$CONFIG_DIR'"
   fi
 }
 
@@ -173,4 +183,4 @@ remove_secrets
 stop_agents
 remove_command
 remove_install
-echo "Done. Your workspace folder and any clones of portable in it were left in place. sbx itself stays installed (brew uninstall sbx)."
+echo "Done. Your project folders and any clones of portable in them were left in place. sbx itself stays installed (brew uninstall sbx)."
