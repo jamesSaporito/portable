@@ -113,7 +113,7 @@ Sandboxes bind the token when they're created; after storing a new one, `portabl
 | Setting | What it does | Per environment |
 |---|---|---|
 | `workspaceDir` | Optional. Empty (the default) lets `portable` run in any project folder. Set it, e.g. to `~/Projects`, to only allow that folder and the ones inside it (see [Choosing what Claude can see](#choosing-what-claude-can-see)). `portable` refuses a value that holds your home folder, is inside your home's settings (`~/.config`, `~/Library` and other dot folders), this project or your Claude configuration repo, or would cover a system folder in the sandbox | No |
-| `claudeConfigRepo` | Your Claude configuration repo. Cloned when a sandbox is created, installed with its own `install.sh`, updated at every boot | No |
+| `claudeConfigRepo` | Your Claude configuration repo, as an HTTPS git URL. `install.sh` asks for it, and you can set or change it on any environment's page (**Claude configuration**). Cloned when a sandbox is created, installed with its own `install.sh`, updated at every boot. A change from the page applies to that environment at once and to the others the next time `portable` starts them | No, one for every environment |
 | `claudeConfigDisable` | Skills or rules to turn off in sandboxes, e.g. `["docker-ports"]`. Lines naming them are removed from the sandbox's `CLAUDE.md` and rules | Yes, as checkboxes on the page |
 | `allowDomains` | Extra hosts sandboxes may reach, e.g. `["pypi.org"]` | Yes, added to these |
 | `awsProfile` | The AWS profile on your computer to use, e.g. `default` or `Terraform`. No global default: AWS is off until an environment's page turns it on | Per environment only |
@@ -158,7 +158,7 @@ The page has:
 - **Services:** the compose files in the folder and the two levels below it, with their containers. Start (`docker compose up --build --detach`), restart and stop them, and follow their logs, all in the sandbox's own Docker.
 - **Sandbox settings:** extra allowed hosts, and CPUs and memory. Hosts apply at once; CPUs and memory say what to run to recreate the sandbox.
 - **AWS:** off by default. Turn it on with one of this computer's profiles, sign in through SSO from the page, refresh the credentials, or turn it off again.
-- **Claude configuration:** the configuration repo's commit, a button to update it from GitHub, and a checkbox for each skill and rule. Turning one off applies to new Claude sessions and survives restarts.
+- **Claude configuration:** the configuration repo's URL, which you can set or change (it's the same for every environment; blank removes it), its commit, a button to update it from GitHub, and a checkbox for each skill and rule. Turning one off applies to new Claude sessions and survives restarts.
 - **Secrets:** whether each token is stored and whether sbx reads it, and whether Claude is signed in. Never the values.
 - **Activity:** what the agent did (forwards opened and closed, settings saved, hosts allowed).
 

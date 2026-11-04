@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { loadEnv, listEnvs, saveEnv, updateEnv } from '../lib/config.mjs';
 import {
-  ROOT, agentSync, alive, applyClaudeConfig, applyDomains, createContext, createSandbox, ensureAgent,
+  ROOT, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, createContext, createSandbox, ensureAgent,
   readAgent, refreshAws, settingsFor, stopAgent,
 } from '../lib/environment.mjs';
 import { PREFIX, UserError, envByName, resolveEnv, sessionFolder, workspaceFolder } from '../lib/env.mjs';
@@ -72,6 +72,13 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
   // AWS only when this environment turned it on; an expired session is reported, not signed in
   // here (the page's Sign in button does that, as does `aws sso login`).
   problems.push(...await refreshAws(ctx, env, settings));
+  // The configuration repo is set at creation; switch to it when another environment's page changed it.
+  if (existing && env.appliedRepo !== undefined && env.appliedRepo !== settings.claudeConfigRepo) {
+    say(`switching ${env.id} to the configuration repo ${settings.claudeConfigRepo || '(none)'}...`);
+    problems.push(...await applyClaudeRepo(ctx, env, settings));
+  } else if (env.appliedRepo === undefined) {
+    env = updateEnv(ctx.paths, env.id, (stored) => { stored.appliedRepo = settings.claudeConfigRepo; });
+  }
   // The skills and rules to leave off are set at creation; push them again only when they changed.
   const disable = settings.claudeConfigDisable.join(' ');
   if (existing && env.appliedDisable !== undefined && env.appliedDisable !== disable) {
