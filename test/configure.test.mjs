@@ -28,7 +28,7 @@ function setup({ stored = [], registered = [], setCode = 0, answers = [], sandbo
 test('configure offers each missing secret, defaulting to no, and succeeds whatever the answers', async () => {
   const { run, calls, questions, lines } = setup({ answers: [true] });
   assert.equal(await run(), 0);
-  assert.deepEqual(questions, ['Store it now?', 'Store it now?']);
+  assert.deepEqual(questions, ['Store it now?']);
   assert.deepEqual(calls, [['set', 'GH_TOKEN']]);
   assert.ok(lines.some((l) => l.includes('Fine-grained tokens')));
   assert.ok(lines.includes('New sandboxes will use them.'));
@@ -39,21 +39,21 @@ test('configure offers each missing secret, defaulting to no, and succeeds whate
 });
 
 test('configure registers a stored secret sbx isn\'t reading, without asking', async () => {
-  const { run, calls, questions } = setup({ stored: ['GH_TOKEN'], registered: ['infracost'] });
+  const { run, calls, questions } = setup({ stored: ['GH_TOKEN'] });
   assert.equal(await run(), 0);
   assert.deepEqual(calls, [['register', 'GH_TOKEN']]);
-  assert.deepEqual(questions, ['Store it now?']);
+  assert.deepEqual(questions, []);
 });
 
 test('configure offers to replace stored secrets and names sandboxes to recreate', async () => {
   const { run, calls, questions, lines } = setup({
-    stored: ['GH_TOKEN', 'INFRACOST_CLI_AUTHENTICATION_TOKEN'],
-    registered: ['github', 'infracost', 'anthropic'],
-    answers: [true, false],
+    stored: ['GH_TOKEN'],
+    registered: ['github', 'anthropic'],
+    answers: [true],
     sandboxes: ['app', 'api'],
   });
   assert.equal(await run(), 0);
-  assert.deepEqual(questions, ['Replace it?', 'Replace it?']);
+  assert.deepEqual(questions, ['Replace it?']);
   assert.deepEqual(calls, [['set', 'GH_TOKEN']]);
   assert.ok(lines.some((l) => l.includes('portable rm app, portable rm api')));
   assert.ok(lines.includes('Claude: signed in.'));

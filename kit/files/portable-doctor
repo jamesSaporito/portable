@@ -70,14 +70,13 @@ check_secrets() {
 check_tools() {
   echo "Tools"
   local tool version
-  for tool in claude git gh aws terraform infracost pnpm docker compose; do
+  for tool in claude git gh aws terraform pnpm docker compose; do
     case "$tool" in
       claude) version="$(claude --version 2>/dev/null)" ;;
       git) version="$(git --version 2>/dev/null)" ;;
       gh) version="$(gh --version 2>/dev/null | head -1)" ;;
       aws) version="$(aws --version 2>/dev/null | cut -d' ' -f1)" ;;
       terraform) version="$(terraform version 2>/dev/null | head -1)" ;;
-      infracost) version="$(infracost version 2>/dev/null | head -1)" && version="infracost $version" ;;
       pnpm) version="$(pnpm --version 2>/dev/null)" && version="pnpm $version" ;;
       docker) version="$(docker --version 2>/dev/null)" ;;
       compose) version="$(docker compose version 2>/dev/null)" ;;
@@ -168,22 +167,6 @@ check_access() {
   else
     fail "AWS rejected your credentials, or couldn't be reached"
   fi
-
-  # auth whoami goes through the proxy to the dashboard API; scanning a one-resource Terraform file uses
-  # the baked-in plugins and the pricing API.
-  local tf
-  if [ -z "${INFRACOST_CLI_AUTHENTICATION_TOKEN:-}" ]; then
-    skip "Infracost: no token bound (store one with 'portable secret set INFRACOST_CLI_AUTHENTICATION_TOKEN', then recreate the sandbox)"
-  elif ! timeout 30 infracost auth whoami >/dev/null 2>&1; then
-    fail "Infracost rejected your token, or dashboard.api.infracost.io couldn't be reached"
-  elif tf="$(mktemp -d)" \
-      && printf 'resource "aws_instance" "t" {\n  ami           = "ami-12345678"\n  instance_type = "t3.micro"\n}\nprovider "aws" {\n  region = "us-east-1"\n}\n' > "$tf/main.tf" \
-      && timeout 120 infracost scan "$tf" >/dev/null 2>&1; then
-    ok "Infracost accepts your token and prices Terraform with the baked-in plugins"
-  else
-    fail "Infracost accepts your token but couldn't scan a test Terraform file (try: infracost scan --debug)"
-  fi
-  if [ -n "${tf:-}" ]; then rm -rf "$tf"; fi
 }
 
 test_image="alpine:3"

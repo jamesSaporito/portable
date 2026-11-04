@@ -1,6 +1,6 @@
 # portable
 
-Claude Code in a microVM on your computer, so it can work on projects without running anything on the computer itself. One command sets it up on any Apple silicon Mac. Each project folder is an environment with its own local page to see its ports and services and change its settings. The sandbox has Claude Code, git, the GitHub CLI (`gh`), the AWS CLI, Terraform, Infracost, pnpm and its own Docker engine with Compose.
+Claude Code in a microVM on your computer, so it can work on projects without running anything on the computer itself. One command sets it up on any Apple silicon Mac. Each project folder is an environment with its own local page to see its ports and services and change its settings. The sandbox has Claude Code, git, the GitHub CLI (`gh`), the AWS CLI, Terraform, pnpm and its own Docker engine with Compose.
 
 portable is a thin layer over [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`): each project folder gets its own VM with its own kernel and Docker engine, and a proxy on the host decides what it may reach and adds your credentials to requests, so the tokens never enter the VM. portable adds what sbx doesn't have: the tools, your Claude configuration repo, Keychain-backed secrets, the AWS SSO handoff, ports that keep their number, a page per environment, `/start` and `/stop`, and `portable doctor`.
 
@@ -14,7 +14,6 @@ There's nothing to add to a project: an environment is just a folder. Its settin
 | Docker | The sandbox's own engine, inside the VM. Images, containers and volumes stay in the sandbox until you delete it |
 | Claude | Signed in once per computer with `/login`; sbx keeps the token on the host and puts it on requests to Anthropic. The sandbox sees a placeholder |
 | GitHub | A fine-grained token from your Keychain, limited to the repos you choose, added by the proxy to requests to GitHub. `gh` and `git` over HTTPS work; the sandbox sees a placeholder |
-| Infracost | A token from your Keychain, added by the proxy to requests to Infracost's pricing and dashboard APIs; the sandbox sees a placeholder. Optional. Its Terraform and AWS plugins are built in and pinned, so it downloads nothing at run time |
 | AWS | Off unless you turn it on for the environment, on its page. Then temporary credentials (about 1 hour) made from an AWS profile on your computer are written into the sandbox at each start and when you refresh. Your SSO login stays on the host |
 | Claude settings | Your skills, rules and `CLAUDE.md` from your configuration repo, with any you turned off on the environment's page left out. portable adds `/start` and `/stop`, which boot and stop a project's `docker compose` stack |
 | The internet | Only the hosts in `kit/portable.yaml` and the environment's allowed hosts (its page, plus `allowDomains` in `config.json` for every environment), by name. Everything else is refused, for Claude and for the containers it starts |
@@ -34,7 +33,7 @@ Honest list of what the sandbox doesn't protect:
 sbx proxies every outbound TCP connection through the host and refuses destinations that no rule allows; UDP and ICMP are blocked ([Docker docs](https://docs.docker.com/ai/sandboxes/security/)). portable's kit allows, by host name:
 
 - **GitHub:** web, API, git over HTTPS and release downloads.
-- **npm, Terraform's registry and HashiCorp releases, Infracost's pricing and dashboard APIs, Docker Hub, the Alpine and Debian package mirrors.**
+- **npm, Terraform's registry and HashiCorp releases, Docker Hub, the Alpine and Debian package mirrors.**
 - **AWS:** `*.amazonaws.com`, so every AWS API works, Lambda and Secrets Manager included.
 
 Add a project's hosts on its environment page (**Sandbox settings → Extra allowed hosts**, e.g. `pypi.org` and `files.pythonhosted.org`), or for every environment with `allowDomains` in `config.json`. portable adds them as rules scoped to that one sandbox (`sbx policy allow network --sandbox`), so one project's hosts don't open up the others; `sbx policy ls <sandbox>` shows the result. Docker's Claude workload adds Anthropic's hosts itself. A blocked host fails fast with "connection refused" or a TLS error; the sandbox's `CLAUDE.md` tells Claude to report the host rather than work around it.
@@ -77,7 +76,7 @@ cd ~/path/to/this/repo
    Say no to any of them and it stops, telling you what to install yourself. Run without a terminal (e.g. from a script), it installs nothing and stops at the first thing that's missing.
 3. Links the `portable` command (`bin/portable`, which starts portable on its own Node) into `~/.local/bin` and adds that folder to your PATH in your shell's rc file.
 4. Creates `~/.config/portable/config.json` from the defaults, or clones your settings repo when you pass `--settings URL` (see [Carrying settings to another Mac](#carrying-settings-to-another-mac)), and asks for your Claude configuration repo if none is set. If an AWS profile is set and the AWS CLI is missing, offers `brew install awscli` on macOS.
-5. Runs `portable configure`, which offers to store the GitHub and Infracost tokens (step 3 below; both optional). They go in the Keychain, and sbx is told to read them from there.
+5. Runs `portable configure`, which offers to store the GitHub token (step 3 below; optional). They go in the Keychain, and sbx is told to read them from there.
 
 Open a **new terminal** afterwards so `portable` is on your PATH.
 
@@ -106,10 +105,6 @@ Every token is optional. Without the GitHub one, public repos (your configuratio
 A fine-grained token can reach one owner only (your account or one organization). It can't push to repos where you're an outside collaborator. See [Limits](#limits) for why the default branches of this repo and the configuration repo should be protected.
 
 Sandboxes bind the token when they're created; after storing a new one, `portable rm` the sandboxes that should use it.
-
-**Infracost (optional).** For `infracost` cost estimates, create a personal access token (or a service account token) in [Infracost Cloud](https://dashboard.infracost.io) and store it with `portable configure` too (or `portable secret set INFRACOST_CLI_AUTHENTICATION_TOKEN`).
-
-The proxy adds it to requests to Infracost and the sandbox sees a placeholder, so don't run `infracost auth login` in a sandbox; that would cache a real token in it. Like the GitHub token, it's bound when a sandbox is created.
 
 ### 4. Settings (`config.json`)
 
@@ -285,7 +280,7 @@ To try a change before merging, run the clone directly on your computer, e.g. `~
 
 ## Updating tool versions
 
-The base images are pinned by digest in `kit/portable.dockerfile` (`debian:trixie-slim`) and `lib/sbx.mjs` (Docker's Claude workload), so two Macs build the same image weeks apart; `docker buildx imagetools inspect <image:tag>` gives the digest of a newer tag. The tool versions are pinned in `kit/portable.dockerfile` (`TERRAFORM_VERSION`, `INFRACOST_VERSION` and its plugins' `INFRACOST_*_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSION`) with the SHA-256 of each download next to them; change both. Claude Code's version comes from Docker's workload, pinned in `lib/sbx.mjs` (`WORKLOAD`): pick a newer tag from [Docker Hub](https://hub.docker.com/r/docker/sbx-kit-claude/tags). New sandboxes get the new versions; `portable rm` existing ones to rebuild them.
+The base images are pinned by digest in `kit/portable.dockerfile` (`debian:trixie-slim`) and `lib/sbx.mjs` (Docker's Claude workload), so two Macs build the same image weeks apart; `docker buildx imagetools inspect <image:tag>` gives the digest of a newer tag. The tool versions are pinned in `kit/portable.dockerfile` (`TERRAFORM_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSION`) with the SHA-256 of each download next to them; change both. Claude Code's version comes from Docker's workload, pinned in `lib/sbx.mjs` (`WORKLOAD`): pick a newer tag from [Docker Hub](https://hub.docker.com/r/docker/sbx-kit-claude/tags). New sandboxes get the new versions; `portable rm` existing ones to rebuild them.
 
 ## Verify the setup
 
@@ -301,9 +296,9 @@ It checks your computer first: sbx and its sign-in, that portable runs on its ow
 
 - **Sandbox:** runs as an ordinary user, sees only the folder it started in and nothing else on your computer.
 - **Credentials:** no real Claude or GitHub token is readable in the sandbox, and git is set to use the proxy-managed one.
-- **Tools:** the versions of Claude Code, git, gh, the AWS CLI, Terraform, Infracost, pnpm, Docker and Compose.
+- **Tools:** the versions of Claude Code, git, gh, the AWS CLI, Terraform, pnpm, Docker and Compose.
 - **Claude configuration:** your skills, rules and `CLAUDE.md` are installed, read-only and current, portable's `/start` and `/stop` and managed `CLAUDE.md` are there, and the settings carry no macOS-only paths.
-- **Access:** Claude answers a one-line prompt, GitHub accepts the token, AWS answers `sts get-caller-identity` when a profile is set, and Infracost accepts the token and scans a test Terraform file when a token is stored.
+- **Access:** Claude answers a one-line prompt, GitHub accepts the token, and AWS answers `sts get-caller-identity` when a profile is set.
 - **Docker:** the sandbox's engine pulls from Docker Hub, containers it starts see the workspace folder and nothing else, and their ports are on `localhost`.
 - **Ports and the page:** a port a test container publishes is forwarded to the host, answers there and is closed again when the container goes; the environment page starts, answers with its token and refuses a request without it.
 - **Network:** allowed hosts (npm, the Terraform registry) are reachable and other sites are blocked, from the sandbox and from containers Docker starts.
@@ -344,7 +339,7 @@ One thing it can't check without changing a repo: pushing. Push a branch to a re
 It's safe to re-run. It:
 
 1. Lists portable's sandboxes and asks before deleting them, since their Docker data and Claude history go with them.
-2. Asks whether to remove the GitHub and Infracost token sources from sbx.
+2. Asks whether to remove the GitHub token source from sbx (and the Infracost one earlier versions added).
 3. If Docker Desktop is still installed, asks whether to delete the leftovers of the Docker-based portable (its engine container, volumes and images).
 4. Asks whether to delete your secrets from the Keychain (macOS).
 5. Stops any environment page still running, and deletes portable's own Node.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Undoes install.sh. Safe to re-run. Asks before anything you'd lose for good; --yes answers yes to all.
 #   1. deletes portable's sandboxes (asks first; their Docker data and Claude history go with them)
-#   2. asks to remove the GitHub token and Infracost token sources from sbx
+#   2. asks to remove the GitHub token source from sbx (and the Infracost one earlier versions added)
 #   3. asks to delete leftovers of the Docker-based portable (engine container, volumes, images), if
 #      Docker is still installed
 #   4. asks to delete the secrets in the Keychain (macOS)

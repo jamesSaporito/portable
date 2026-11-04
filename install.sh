@@ -10,7 +10,7 @@
 #   3. creates the settings folder (~/.config/portable): from your settings repo when given
 #      (--settings URL, or PORTABLE_SETTINGS_REPO), else config.json from the defaults; asks for your
 #      Claude configuration repo if none is set
-#   4. runs `portable configure` (only in a terminal), which asks for the GitHub and Infracost tokens;
+#   4. runs `portable configure` (only in a terminal), which asks for the GitHub token;
 #      they go in the Keychain, and sbx is told to read them from there
 set -euo pipefail
 
@@ -266,7 +266,7 @@ offer_aws() {
   echo "Note: the aws CLI isn't installed. It's only needed if you turn AWS on for an environment (on its page); then: brew install awscli"
 }
 
-# Prompts for the GitHub and Infracost tokens that aren't stored yet (portable configure).
+# Prompts for the GitHub token if it isn't stored yet (portable configure).
 offer_secrets() {
   if [ ! -t 0 ]; then
     echo "Not a terminal; skipping secrets. Store them later with: portable configure"
