@@ -284,7 +284,7 @@ To try a change before merging, run the clone directly on your computer, e.g. `~
 
 ## Updating tool versions
 
-The base images are pinned by digest in `kit/portable.dockerfile` (`debian:trixie-slim`) and `lib/sbx.mjs` (Docker's Claude workload), so two Macs build the same image weeks apart; `docker buildx imagetools inspect <image:tag>` gives the digest of a newer tag. The tool versions are pinned in `kit/portable.dockerfile` (`TERRAFORM_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSION`) with the SHA-256 of each download next to them; change both. Claude Code's version comes from Docker's workload, pinned in `lib/sbx.mjs` (`WORKLOAD`): pick a newer tag from [Docker Hub](https://hub.docker.com/r/docker/sbx-kit-claude/tags). New sandboxes get the new versions; `portable rm` existing ones to rebuild them.
+The base image is pinned by digest in `kit/portable.dockerfile` (`debian:trixie-slim`), so two Macs build the same image weeks apart; `docker buildx imagetools inspect <image:tag>` gives the digest of a newer tag. The tool versions are pinned in `kit/portable.dockerfile` (`TERRAFORM_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSION`) with the SHA-256 of each download next to them; change both. Claude Code comes from sbx's built-in `claude` agent (`WORKLOAD` in `lib/sbx.mjs`), so its starting version follows the installed sbx; the pinned `docker/sbx-kit-claude` image was dropped because `/login` can't sign in with it. New sandboxes get the new versions; `portable rm` existing ones to rebuild them.
 
 ## Verify the setup
 

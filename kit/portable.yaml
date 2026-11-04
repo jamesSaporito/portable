@@ -1,6 +1,6 @@
 # syntax=docker/sandbox-kit:3
-# portable's mixin for Docker Sandboxes (sbx). bin/portable.mjs adds it to Docker's Claude Code workload
-# (docker/sbx-kit-claude) with --kit. It brings the tools, portable's own skills and managed CLAUDE.md
+# portable's mixin for Docker Sandboxes (sbx). bin/portable.mjs adds it to sbx's built-in Claude Code
+# agent (`claude`) with --kit. It brings the tools, portable's own skills and managed CLAUDE.md
 # as a filesystem overlay (portable.dockerfile), and declares what the sandbox may reach and do.
 # Spec: https://github.com/docker/sandbox-kit-spec (docs/spec/SPEC-v3.md)
 schemaVersion: "3"
