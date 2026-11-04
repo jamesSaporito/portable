@@ -76,7 +76,7 @@ cd ~/path/to/this/repo
 
    Say no to any of them and it stops, telling you what to install yourself. Run without a terminal (e.g. from a script), it installs nothing and stops at the first thing that's missing.
 3. Links the `portable` command (`bin/portable`, which starts portable on its own Node) into `~/.local/bin` and adds that folder to your PATH in your shell's rc file.
-4. Creates `~/.config/portable/config.json` from the defaults and an older portable's `.env` (which is left in place for that version), or clones your settings repo when you pass `--settings URL` (see [Carrying settings to another Mac](#carrying-settings-to-another-mac)), and asks for your Claude configuration repo if none is set. If an AWS profile is set and the AWS CLI is missing, offers `brew install awscli` on macOS.
+4. Creates `~/.config/portable/config.json` from the defaults, or clones your settings repo when you pass `--settings URL` (see [Carrying settings to another Mac](#carrying-settings-to-another-mac)), and asks for your Claude configuration repo if none is set. If an AWS profile is set and the AWS CLI is missing, offers `brew install awscli` on macOS.
 5. Runs `portable configure`, which asks for the GitHub token and the optional Infracost token (step 3 below). They go in the Keychain, and sbx is told to read them from there.
 
 Open a **new terminal** afterwards so `portable` is on your PATH.
@@ -122,7 +122,7 @@ The proxy adds it to requests to Infracost and the sandbox sees a placeholder, s
 | `awsProfile` | The AWS profile on your computer to use, e.g. `default` or `Terraform`. No global default: AWS is off until an environment's page turns it on | Per environment only |
 | `cpus`, `memory` | The size of each microVM (default 4 and `8g`). Fixed when a sandbox is created | Yes; applies when the sandbox is recreated |
 
-The old variable names (`WORKSPACE_DIR`, `PORTABLE_CLAUDE_CONFIG_REPO`, `PORTABLE_CLAUDE_CONFIG_DISABLE`, `PORTABLE_ALLOW_DOMAINS`) set in your shell still take precedence. `PORTABLE_AWS_PROFILE` and a global `awsProfile` are ignored now that AWS is per environment.
+`WORKSPACE_DIR`, `PORTABLE_CLAUDE_CONFIG_REPO`, `PORTABLE_CLAUDE_CONFIG_DISABLE` and `PORTABLE_ALLOW_DOMAINS` set in your shell take precedence over `config.json`. There's no `.env` file anymore; an older portable's isn't read.
 
 Commits use the `user.name` and `user.email` from your computer's git config; sbx passes them in.
 

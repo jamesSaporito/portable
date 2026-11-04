@@ -2,39 +2,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  DEFAULTS, effectiveSettings, fromLegacy, initGlobal, loadEnv, loadGlobal, parseEnvFile, saveEnv, updateEnv, validateOverrides,
+  DEFAULTS, effectiveSettings, fromEnvVars, initGlobal, loadEnv, loadGlobal, saveEnv, updateEnv, validateOverrides,
 } from '../lib/config.mjs';
 import { tempHome } from './support/helpers.mjs';
 
-test('parseEnvFile reads KEY=VALUE lines and skips comments and junk', () => {
-  const values = parseEnvFile('# comment\nWORKSPACE_DIR=~/Projects/x\n\nBAD KEY=1\nPORTABLE_ALLOW_DOMAINS=a.org b.org\n=nokey\n');
-  assert.deepEqual(values, { WORKSPACE_DIR: '~/Projects/x', PORTABLE_ALLOW_DOMAINS: 'a.org b.org' });
-});
-
-test('fromLegacy maps the old names and splits lists', () => {
-  assert.deepEqual(fromLegacy({ PORTABLE_ALLOW_DOMAINS: 'a.org  b.org', PORTABLE_CLAUDE_CONFIG_REPO: 'r', OTHER: 'x' }), {
+test('fromEnvVars maps the shell variable names and splits lists', () => {
+  assert.deepEqual(fromEnvVars({ PORTABLE_ALLOW_DOMAINS: 'a.org  b.org', PORTABLE_CLAUDE_CONFIG_REPO: 'r', OTHER: 'x' }), {
     allowDomains: ['a.org', 'b.org'],
     claudeConfigRepo: 'r',
   });
 });
 
-test('loadGlobal reads an older portable\'s .env without touching it; initGlobal writes config.json from it', (t) => {
+test('initGlobal writes config.json from the defaults once and keeps what is there', (t) => {
   const { paths } = tempHome(t);
-  fs.mkdirSync(paths.config, { recursive: true });
-  const env = 'WORKSPACE_DIR=~/Projects/sandboxed\nPORTABLE_CLAUDE_CONFIG_REPO=https://github.com/me/config.git\n';
-  fs.writeFileSync(paths.legacyEnvFile, env);
-  const global = loadGlobal(paths, {});
-  assert.equal(global.claudeConfigRepo, 'https://github.com/me/config.git');
-  assert.equal(global.cpus, DEFAULTS.cpus);
-  assert.ok(!fs.existsSync(paths.configFile), 'reading must not write config.json');
-  assert.equal(fs.readFileSync(paths.legacyEnvFile, 'utf8'), env, 'the .env stays for the older portable');
-
-  initGlobal(paths);
-  assert.equal(JSON.parse(fs.readFileSync(paths.configFile, 'utf8')).claudeConfigRepo, 'https://github.com/me/config.git');
-  assert.ok(fs.existsSync(paths.legacyEnvFile));
-  // A second init keeps what's there.
-  fs.writeFileSync(paths.configFile, JSON.stringify({ awsProfile: 'kept' }));
-  assert.equal(initGlobal(paths).awsProfile, 'kept');
+  assert.equal(initGlobal(paths).cpus, DEFAULTS.cpus);
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(paths.configFile, 'utf8'))).sort(), Object.keys(DEFAULTS).sort());
+  fs.writeFileSync(paths.configFile, JSON.stringify({ claudeConfigRepo: 'kept' }));
+  assert.equal(initGlobal(paths).claudeConfigRepo, 'kept');
 });
 
 test('loadGlobal lets shell variables win over config.json', (t) => {
@@ -57,7 +41,7 @@ test('AWS is off unless the environment turned it on; an old global awsProfile i
   const global = { ...DEFAULTS, awsProfile: 'leftover-from-config.json' };
   assert.equal(effectiveSettings(global, { overrides: {} }).awsProfile, '');
   assert.equal(effectiveSettings(global, { overrides: { awsProfile: 'tf' } }).awsProfile, 'tf');
-  assert.equal(fromLegacy({ PORTABLE_AWS_PROFILE: 'x' }).awsProfile, undefined);
+  assert.equal(fromEnvVars({ PORTABLE_AWS_PROFILE: 'x' }).awsProfile, undefined);
 });
 
 test('validateOverrides accepts good values and rejects bad ones', () => {
