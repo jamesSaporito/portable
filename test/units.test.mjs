@@ -44,6 +44,24 @@ test('sbx.create passes size, env and the kit, and skips empty values', async ()
   assert.deepEqual(seen.slice(-3), ['--kit', '/kit', '/w/app']);
 });
 
+test('sbx.create builds the kit in the builder sandbox unless SBX_KIT_BUILDER is set', async () => {
+  let seen;
+  const sbx = createSbx({ runInteractive: async (cmd, args, opts) => { seen = opts.env; return 0; } });
+  const saved = process.env.SBX_KIT_BUILDER;
+  try {
+    delete process.env.SBX_KIT_BUILDER;
+    await sbx.create('portable-app', '/w/app', { kit: '/kit' });
+    assert.equal(seen.SBX_KIT_BUILDER, 'sandbox');
+    assert.equal(seen.PATH, process.env.PATH);
+    process.env.SBX_KIT_BUILDER = 'host';
+    await sbx.create('portable-app', '/w/app', { kit: '/kit' });
+    assert.equal(seen.SBX_KIT_BUILDER, 'host');
+  } finally {
+    if (saved === undefined) delete process.env.SBX_KIT_BUILDER;
+    else process.env.SBX_KIT_BUILDER = saved;
+  }
+});
+
 test('parseExport only takes the AWS credential names', () => {
   assert.deepEqual(parseExport('AWS_ACCESS_KEY_ID=AKIA\nAWS_SECRET_ACCESS_KEY=s\nPATH=/evil\nAWS_SESSION_TOKEN=t\n'), {
     AWS_ACCESS_KEY_ID: 'AKIA',
