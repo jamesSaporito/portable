@@ -8,6 +8,9 @@
 #                             when GitHub has new commits, resets the clone to them and relinks
 #   portable-setup config     from the host through `sbx exec`, as root, with the skills and rules to
 #                             leave off on stdin (one per line): records them, then updates and relinks
+#   portable-setup repo       from the host through `sbx exec`, as root, with the configuration repo's
+#                             URL on stdin (blank for none): records it, re-clones when it changed and
+#                             relinks, or removes the clone and its links
 #   portable-setup aws        from the host through `sbx exec`, as root, with `export AWS_...`
 #                             lines on stdin: makes them the sandbox's AWS credentials
 #   portable-setup ports      from the host's agent through `sbx exec`, as root, with `SANDBOX MAC` port
@@ -26,8 +29,22 @@ persistent="${PORTABLE_PERSISTENT_FILE:-/etc/sandbox-persistent.sh}"
 # Skills and rules to leave off, as set on the environment's page. Kept in the sandbox so later boots
 # use it; until the page has set one, the list the sandbox was created with applies.
 disable_file="${PORTABLE_DISABLE_FILE:-/etc/portable/claude-config-disable}"
+# The configuration repo's URL, as set on the environment's page, the same way: once the page has set
+# one (even blank), it wins over the URL the sandbox was created with (PORTABLE_CLAUDE_CONFIG_REPO).
+repo_file="${PORTABLE_REPO_FILE:-/etc/portable/claude-config-repo}"
 
 warn() { echo "portable: $*" >&2; }
+
+config_repo() {
+  if [ -f "$repo_file" ]; then cat "$repo_file"; else printf '%s' "${PORTABLE_CLAUDE_CONFIG_REPO:-}"; fi
+}
+
+# Removes the links into the clone that the repo's install.sh made in ~/.claude, before the clone
+# goes or is replaced by another repo's.
+unlink_config() {
+  [ -d "$state_dir" ] && find "$state_dir" -maxdepth 3 -type l -lname "$config_dir/*" -delete 2>/dev/null
+  return 0
+}
 
 disabled_names() {
   if [ -f "$disable_file" ]; then tr '\n' ' ' < "$disable_file" | sed 's/ *$//'; else echo "${PORTABLE_CLAUDE_CONFIG_DISABLE:-}"; fi
@@ -92,11 +109,18 @@ apply_filter() {
 
 # Clones or updates the configuration repo (as root). Prints "changed" when files were replaced.
 sync_clone() {
-  local repo="${PORTABLE_CLAUDE_CONFIG_REPO:-}" disabled
+  local repo disabled
+  repo="$(config_repo)"
   disabled="$(disabled_names)"
   local marker="$config_dir/.git/portable-filtered" refilter=""
   [ -n "$repo" ] || return 1
 
+  # Another repo than the clone's (changed on the page): start over with the new one.
+  if [ -d "$config_dir/.git" ] && [ "$(config_git config --get remote.origin.url 2>/dev/null)" != "$repo" ]; then
+    warn "the configuration repo changed to $repo; replacing the clone"
+    unlink_config
+    rm -rf "$config_dir"
+  fi
   if [ ! -d "$config_dir/.git" ]; then
     warn "cloning $repo"
     rm -rf "$config_dir"
@@ -142,8 +166,8 @@ cmd_install() {
   git config --system credential.https://github.com.helper '!gh auth git-credential'
   git config --system credential.https://gist.github.com.helper '!gh auth git-credential'
   git config --system --add safe.directory "$config_dir"
-  if [ -z "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ]; then
-    warn "no Claude configuration repo set (PORTABLE_CLAUDE_CONFIG_REPO); skipping"
+  if [ -z "$(config_repo)" ]; then
+    warn "no Claude configuration repo set (claudeConfigRepo); skipping"
     return 0
   fi
   # A failed clone only warns (sync_clone says why): the sandbox works without the repo, and the
@@ -153,7 +177,7 @@ cmd_install() {
 }
 
 cmd_update() {
-  [ -n "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ] || return 0
+  [ -n "$(config_repo)" ] || return 0
   local result
   result="$(sync_clone)" || return 0
   # Relink when files changed, or when the install never happened (e.g. the repo was unreachable then).
@@ -173,12 +197,33 @@ cmd_config() {
     echo "$name"
   done > "$tmp"
   mkdir -p "$(dirname "$disable_file")" && install -m 644 "$tmp" "$disable_file" && rm -f "$tmp"
-  [ -n "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ] || return 0
+  [ -n "$(config_repo)" ] || return 0
   if [ -d "$config_dir/.git" ]; then
     apply_filter "$(disabled_names)"
   else
     sync_clone >/dev/null || return 0
   fi
+  link_config
+}
+
+# Records the configuration repo's URL (one line on stdin; blank for none) and brings the clone in
+# line: re-cloned and relinked when the URL changed, removed with its links when it's blank. Fails
+# when the new repo can't be cloned, so the page can say so.
+cmd_repo() {
+  local repo=""
+  IFS= read -r repo || true
+  case "$repo" in
+    '') ;;
+    https://*) case "$repo" in *[[:space:]\'\"\`\$]*) warn "not a repo URL: $repo"; return 2 ;; esac ;;
+    *) warn "the configuration repo must be an HTTPS git URL: $repo"; return 2 ;;
+  esac
+  mkdir -p "$(dirname "$repo_file")" && printf '%s' "$repo" > "$repo_file" && chmod 644 "$repo_file"
+  if [ -z "$repo" ]; then
+    unlink_config
+    rm -rf "$config_dir"
+    return 0
+  fi
+  sync_clone >/dev/null || return 1
   link_config
 }
 
@@ -222,5 +267,6 @@ case "${1:-}" in
   config) cmd_config ;;
   aws) cmd_aws ;;
   ports) cmd_ports ;;
-  *) echo "usage: portable-setup install|update|config|aws|ports" >&2; exit 2 ;;
+  repo) cmd_repo ;;
+  *) echo "usage: portable-setup install|update|config|aws|ports|repo" >&2; exit 2 ;;
 esac

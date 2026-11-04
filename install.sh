@@ -261,7 +261,7 @@ create_config() {
   fi
   with_config 'const { initGlobal } = await import(`${process.env.PORTABLE_LIB}/config.mjs`); initGlobal(paths); console.log(`Settings are in ${paths.configFile}`);'
   if [ -t 0 ] && [ -z "$(with_config 'process.stdout.write(loadGlobal(paths, {}).claudeConfigRepo);')" ]; then
-    read -r -p "Your Claude configuration repo (HTTPS git URL, blank for none): " repo
+    read -r -p "Your Claude configuration repo (HTTPS git URL; blank to skip, you can set it later on any environment's page): " repo
     [ -z "$repo" ] || REPO="$repo" with_config 'saveGlobal(paths, { ...loadGlobal(paths, {}), claudeConfigRepo: process.env.REPO });'
   fi
 }

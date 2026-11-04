@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  DEFAULTS, effectiveSettings, fromEnvVars, initGlobal, loadEnv, loadGlobal, saveEnv, updateEnv, validateOverrides,
+  DEFAULTS, effectiveSettings, fromEnvVars, initGlobal, loadEnv, loadGlobal, saveEnv, updateEnv, validateOverrides, validateRepo,
 } from '../lib/config.mjs';
 import { tempHome } from './support/helpers.mjs';
 
@@ -66,4 +66,12 @@ test('updateEnv re-reads before writing, so concurrent writers keep each other\'
   const env = loadEnv(paths, 'app');
   assert.deepEqual(env.ports, { 3000: 3001 });
   assert.equal(env.overrides.awsProfile, 'x');
+});
+
+test('validateRepo takes blank or an HTTPS git URL, nothing a shell would read', () => {
+  assert.equal(validateRepo(''), '');
+  assert.equal(validateRepo('  https://github.com/me/claude-configuration.git '), 'https://github.com/me/claude-configuration.git');
+  for (const bad of ['git@github.com:me/x.git', 'http://github.com/me/x', 'https://github.com/me/x $(reboot)', 'https://x/`id`', 42]) {
+    assert.throws(() => validateRepo(bad), /HTTPS git URL|must be a URL/, String(bad));
+  }
 });

@@ -89,6 +89,16 @@
         <h2>Claude configuration</h2>
         <button type="button" data-action="claude-update">Update from GitHub</button>
       </div>
+      <form id="claude-repo-form">
+        <label>
+          <span>Configuration repo</span>
+          <input name="repo" type="url" placeholder="https://github.com/you/claude-configuration.git" autocomplete="off" spellcheck="false">
+          <small class="muted">Your skills, rules and <code>CLAUDE.md</code>, as an HTTPS git URL. It's the same for every environment: this one switches when you save, the others the next time <code>portable</code> starts them. Blank removes it. A private repo needs a GitHub token that includes it (<code>portable configure</code>).</small>
+        </label>
+        <div class="actions">
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
       <p id="claude-repo" class="muted"></p>
       <div class="columns">
         <div>

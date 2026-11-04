@@ -36,3 +36,4 @@
 - `/usage` limit bars: check whether sbx's OAuth `/login` token carries the `user:profile` scope the old `setup-token` lacked
 - With `workspaceDir` empty (the new default), start a real sandbox from a project outside `~/Projects` and run `portable doctor` from `~`; only the folder checks were run against real paths, not a sandbox
 - `/ui` in a real session: create a sandbox with `portable claude` (the page should open in the browser by itself), then type `/ui` and Cmd-click the link; only the unit tests and lint ran, not a sandbox
+- Change the configuration repo on a real page (set, switch to another repo, clear) and check a second environment switches at its next `portable`; only unit tests and a local run of the clone switching (with the Linux-only linking stubbed) were done, not a sandbox

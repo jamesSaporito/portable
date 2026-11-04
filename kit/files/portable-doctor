@@ -85,11 +85,17 @@ check_tools() {
   done
 }
 
+# The configuration repo's URL: the one set on the environment's page, else the one the sandbox was
+# created with (portable-setup keeps the same order).
+config_repo() {
+  cat /etc/portable/claude-config-repo 2>/dev/null || printf '%s' "${PORTABLE_CLAUDE_CONFIG_REPO:-}"
+}
+
 check_claude_config() {
   echo "Claude configuration"
   local dir=/home/agent/claude-configuration name
-  if [ -z "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ]; then
-    skip "no Claude configuration repo set (claudeConfigRepo in portable's config.json)"
+  if [ -z "$(config_repo)" ]; then
+    skip "no Claude configuration repo set (on the environment's page, or claudeConfigRepo in portable's config.json)"
   elif [ ! -d "$dir/.git" ]; then
     fail "your Claude configuration repo couldn't be downloaded (does the GitHub token include it?)"
   elif [ "$(readlink "$CLAUDE_CONFIG_DIR/CLAUDE.md" 2>/dev/null)" != "$dir/CLAUDE.md" ]; then
@@ -145,11 +151,13 @@ check_access() {
     skip "GitHub: no token bound (see Credentials)"
   elif login="$(timeout 20 gh api user -q .login 2>/dev/null)"; then
     ok "GitHub accepts your token (signed in as $login)"
-    if [ -n "${PORTABLE_CLAUDE_CONFIG_REPO:-}" ]; then
-      if timeout 20 git ls-remote "$PORTABLE_CLAUDE_CONFIG_REPO" HEAD >/dev/null 2>&1; then
+    local repo
+    repo="$(config_repo)"
+    if [ -n "$repo" ]; then
+      if timeout 20 git ls-remote "$repo" HEAD >/dev/null 2>&1; then
         ok "git can download from GitHub with your token"
       else
-        fail "git can't download $PORTABLE_CLAUDE_CONFIG_REPO; add that repo to your token's repository access"
+        fail "git can't download $repo; add that repo to your token's repository access"
       fi
     fi
   else

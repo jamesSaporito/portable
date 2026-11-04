@@ -216,3 +216,26 @@ test('POST /api/blocked allows a blocked host for this environment and clears th
   assert.ok(sbx.calls.some((c) => c[0] === 'respond' && c[1] === 'network:abc' && c[2] === 'dismiss'));
   assert.equal((await call('POST', '/api/blocked', { body: { id: 'network:abc', action: 'allow' } })).status, 404);
 });
+
+test('PUT /api/claude/repo saves the repo for every environment and switches this sandbox to it', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  const repo = 'https://github.com/me/other-config.git';
+  const result = await call('PUT', '/api/claude/repo', { body: { repo } });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.problems, []);
+  assert.equal(JSON.parse(fs.readFileSync(paths.configFile, 'utf8')).claudeConfigRepo, repo);
+  assert.deepEqual(sbx.calls.at(-1), ['exec', 'portable-app', ['portable-setup', 'repo'], `${repo}\n`]);
+  assert.equal(loadEnv(paths, 'app').appliedRepo, repo);
+  assert.equal((await call('GET', '/api/claude')).body.repo, repo);
+  assert.equal((await call('PUT', '/api/claude/repo', { body: { repo: 'git@github.com:me/x.git' } })).status, 400);
+});
+
+test('PUT /api/claude/repo reports a sandbox that can\'t switch, and keeps the saved repo', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.exec = async () => ({ code: 2, stdout: '', stderr: 'usage: portable-setup install|update|config|aws|ports' });
+  const result = await call('PUT', '/api/claude/repo', { body: { repo: '' } });
+  assert.equal(result.status, 200);
+  assert.match(result.body.problems[0], /portable rm app/);
+  assert.equal(JSON.parse(fs.readFileSync(paths.configFile, 'utf8')).claudeConfigRepo, '');
+  assert.equal(loadEnv(paths, 'app').appliedRepo, undefined);
+});
