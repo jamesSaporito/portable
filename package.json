@@ -12,6 +12,12 @@
   },
   "scripts": {
     "test": "node --test",
-    "lint": "node --check bin/portable.mjs && for f in lib/*.mjs lib/ui/*.js; do node --check \"$f\" || exit 1; done && sh -n bin/portable && bash -n install.sh uninstall.sh kit/files/portable-setup kit/files/portable-doctor"
+    "test:ui": "playwright test",
+    "lint": "node scripts/lint.mjs",
+    "lint:js": "node scripts/lint.mjs js",
+    "lint:sh": "node scripts/lint.mjs sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
   }
 }

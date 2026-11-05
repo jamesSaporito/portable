@@ -49,6 +49,10 @@ header {
   padding: 24px 16px 8px;
 }
 
+/* A deep project path is one long word; let it wrap rather than widen the page on a phone. */
+header > div { min-width: 0; }
+#folder { overflow-wrap: anywhere; }
+
 h1 { margin: 0; font-size: 22px; }
 h2 { margin: 0; font-size: 17px; }
 h3 { margin: 16px 0 6px; font-size: 14px; }
@@ -175,10 +179,19 @@ ul.plain li { padding: 3px 0; }
   header { flex-direction: column; }
 }
 
-#blocked { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 8px; }
-#blocked h3 { margin-top: 0; color: var(--warn); }
-.blocked-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 small code { font-size: 12px; }
+
+.network-filters { margin-top: 8px; }
+.table-scroll { max-height: 420px; overflow: auto; }
+.table-scroll thead th { position: sticky; top: 0; background: var(--surface); }
+#network-body code { word-break: break-all; }
+#network-body td:nth-child(2) { white-space: nowrap; }
+#network-body tr.verdict td { font-weight: 600; border-bottom: 2px solid var(--border); }
+#network-body tr.blocked td { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.policy { display: inline-block; padding: 1px 8px; border: 1px solid; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.policy.allowed { color: var(--ok); }
+.policy.blocked { color: var(--bad); }
+.row-actions { white-space: nowrap; }
 
 select { width: auto; min-width: 10em; }
 #aws-body .actions { margin-top: 8px; }
