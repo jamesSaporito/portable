@@ -7,6 +7,9 @@
 #                             repo's own install.sh, and points git at gh for GitHub credentials
 #   portable-setup update     lifecycle startup hook, as root, at every boot: fetches the repo and,
 #                             when GitHub has new commits, resets the clone to them and relinks
+#   portable-setup permissions  lifecycle startup hook, as root, at every boot: drops the
+#                             bypassPermissions default Docker's workload writes into ~/.claude/settings.json,
+#                             so Claude asks unless a mode is passed (portable claude does)
 #   portable-setup config     from the host through `sbx exec`, as root, with the skills and rules to
 #                             leave off on stdin (one per line): records them, then updates and relinks
 #   portable-setup repo       from the host through `sbx exec`, as root, with the configuration repo's
@@ -263,12 +266,29 @@ cmd_ports() {
   mkdir -p /etc/portable && install -m 644 "$tmp" /etc/portable/ports && rm -f "$tmp"
 }
 
+# Docker's Claude Code workload sets permissions.defaultMode to bypassPermissions in the agent's
+# settings, which applies to any session started without a --permission-mode flag. Removes just that
+# default (other settings stay), so the mode falls back to asking. The flags still work.
+cmd_permissions() {
+  local file="$state_dir/settings.json" tmp
+  [ -f "$file" ] || return 0
+  [ "$(jq -r '.permissions.defaultMode // empty' "$file" 2>/dev/null)" = bypassPermissions ] || return 0
+  tmp="$(mktemp)"
+  if jq 'del(.permissions.defaultMode) | if .permissions == {} then del(.permissions) else . end' "$file" > "$tmp"; then
+    cat "$tmp" > "$file"   # in place, keeping the agent's ownership and mode
+  else
+    warn "couldn't change $file"
+  fi
+  rm -f "$tmp"
+}
+
 case "${1:-}" in
+  permissions) cmd_permissions ;;
   install) cmd_install ;;
   update) cmd_update ;;
   config) cmd_config ;;
   aws) cmd_aws ;;
   ports) cmd_ports ;;
   repo) cmd_repo ;;
-  *) echo "usage: portable-setup install|update|config|aws|ports|repo" >&2; exit 2 ;;
+  *) echo "usage: portable-setup install|update|config|aws|ports|repo|permissions" >&2; exit 2 ;;
 esac

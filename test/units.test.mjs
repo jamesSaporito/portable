@@ -6,6 +6,7 @@ import { parseExport } from '../lib/aws.mjs';
 import { covers, parseRequest } from '../lib/ui/hosts.mjs';
 import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
 import fs from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { KIT, kitHash, kitOutdated, refreshKit } from '../lib/environment.mjs';
 import { loadEnv, saveEnv } from '../lib/config.mjs';
@@ -235,4 +236,25 @@ test('refreshKit leaves the recorded kit alone when sbx refuses', async (t) => {
   sbx.addKit = async () => 1;
   assert.equal(await refreshKit({ sbx, paths }, loadEnv(paths, 'app')), undefined);
   assert.equal(loadEnv(paths, 'app').kit, 'old');
+});
+
+// portable-setup permissions drops Docker's bypassPermissions default and leaves the rest alone.
+test('portable-setup permissions removes only the bypassPermissions default', { skip: spawnSync('jq', ['--version']).error ? 'needs jq' : false }, (t) => {
+  const { home } = tempHome(t);
+  const dir = path.join(home, '.claude');
+  fs.mkdirSync(dir);
+  const file = path.join(dir, 'settings.json');
+  const run = () => execFileSync('bash', [path.join(KIT, 'files', 'portable-setup'), 'permissions'], { env: { ...process.env, PORTABLE_AGENT_HOME: home }, stdio: 'pipe' });
+
+  fs.writeFileSync(file, JSON.stringify({ themeId: 1, permissions: { defaultMode: 'bypassPermissions' }, bypassPermissionsModeAccepted: true }));
+  run();
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { themeId: 1, bypassPermissionsModeAccepted: true });
+
+  const other = { permissions: { defaultMode: 'acceptEdits', allow: ['Bash(ls)'] } };
+  fs.writeFileSync(file, JSON.stringify(other));
+  run();
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), other);
+
+  fs.rmSync(file);
+  run(); // no settings file: nothing to do
 });

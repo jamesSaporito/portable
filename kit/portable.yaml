@@ -119,3 +119,7 @@ capabilities:
           background: true
           env: [GH_TOKEN, PORTABLE_CLAUDE_CONFIG_REPO, PORTABLE_CLAUDE_CONFIG_DISABLE]
           description: Update the Claude configuration repo from GitHub
+        # Docker's workload defaults Claude to bypassPermissions; portable wants it to ask.
+        - command: [portable-setup, permissions]
+          user: "0"
+          description: Stop Claude defaulting to bypassPermissions
