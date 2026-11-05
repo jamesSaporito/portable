@@ -1,9 +1,10 @@
 // Small parsers and helpers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addedDomains, blockedHosts, createSbx, parsePublished, tcpForwards, versionAtLeast } from '../lib/sbx.mjs';
+import { addedDomains, allowedHosts, blockedHosts, createSbx, parsePublished, tcpForwards, versionAtLeast } from '../lib/sbx.mjs';
 import { parseExport } from '../lib/aws.mjs';
-import { claudeArgs, versionLine } from '../bin/portable.mjs';
+import { covers, parseRequest } from '../lib/ui/hosts.mjs';
+import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { KIT, kitHash, kitOutdated, refreshKit } from '../lib/environment.mjs';
@@ -75,6 +76,26 @@ test('parseExport only takes the AWS credential names', () => {
   });
 });
 
+test('parseCommand takes only portable\'s own commands, and --name only before claude or exec', () => {
+  assert.deepEqual(parseCommand([]), { command: 'shell', name: undefined, args: [] });
+  assert.deepEqual(parseCommand(['claude', '--worktree', 'x']), { command: 'claude', name: undefined, args: ['--worktree', 'x'] });
+  assert.deepEqual(parseCommand(['configure']), { command: 'configure', args: [] });
+  assert.deepEqual(parseCommand(['ui', 'api']), { command: 'ui', args: ['api'] });
+  assert.deepEqual(parseCommand(['exec', 'docker', 'compose', 'up', '-d']), { command: 'exec', name: undefined, args: ['docker', 'compose', 'up', '-d'] });
+  assert.deepEqual(parseCommand(['--name', 'blah']), { command: 'shell', name: 'blah', args: [] });
+  assert.deepEqual(parseCommand(['--name', 'api', 'claude']), { command: 'claude', name: 'api', args: [] });
+  assert.deepEqual(parseCommand(['--name', 'api', 'exec', 'ls']), { command: 'exec', name: 'api', args: ['ls'] });
+
+  // Anything else is refused before portable touches settings or sbx.
+  assert.throws(() => parseCommand(['blah']), /unknown command 'blah'; see 'portable help' \(to run it in the sandbox: portable exec blah\)/);
+  assert.throws(() => parseCommand(['terraform', 'plan']), /unknown command 'terraform'/);
+  assert.throws(() => parseCommand(['--bogus']), /unknown option '--bogus'/);
+  assert.throws(() => parseCommand(['--name', 'api', 'ps']), /unknown command 'ps' after --name api; see 'portable help' \(to run it in the sandbox: portable --name api exec ps\)/);
+  assert.throws(() => parseCommand(['--name']), /usage: portable --name NAME/);
+  assert.throws(() => parseCommand(['--name', '--x']), /usage: portable --name NAME/);
+  assert.throws(() => parseCommand(['exec']), /usage: portable exec CMD/);
+});
+
 test('claudeArgs asks before acting unless a permission flag is given', () => {
   assert.deepEqual(claudeArgs([]), ['--permission-mode', 'default']);
   assert.deepEqual(claudeArgs(['--worktree', 'x']), ['--permission-mode', 'default', '--worktree', 'x']);
@@ -91,6 +112,47 @@ test('addedDomains keeps only hosts added for this sandbox', () => {
     { scope: 'sandbox:other', decision: 'allow', resources: ['x.org'], editable: true, sandbox_id: 'other', provenance: { created_via: 'added' } },
   ];
   assert.deepEqual(addedDomains(rules, 'portable-smoke'), ['pypi.org']);
+});
+
+test('allowedHosts groups every allow rule for the sandbox by where it came from', () => {
+  // Shapes from `sbx policy ls portable-Portfolio2 --type network --format json` (sbx 0.51.0).
+  const rules = [
+    { name: 'default-ai-services', decision: 'allow', resources: ['api.anthropic.com:443', '**.openai.com:443'], provenance: { created_via: 'default' } },
+    { name: 'kit:portable-smoke', decision: 'allow', resources: ['github.com:443', 'mcp.atlassian.com'], sandbox_id: 'portable-smoke', provenance: { created_via: 'provisioned', source: 'sandboxes' } },
+    { decision: 'allow', resources: ['pypi.org'], sandbox_id: 'portable-smoke', provenance: { created_via: 'added' } },
+    { decision: 'allow', resources: ['old.example.com'], provenance: { created_via: 'added' } },
+    { decision: 'allow', resources: ['x.org'], sandbox_id: 'other', provenance: { created_via: 'added' } },
+    { name: 'default-deny-all', decision: 'deny', resources: ['**'] },
+  ];
+  assert.deepEqual(allowedHosts(rules, 'portable-smoke'), [
+    { source: 'sbx', name: 'ai services', hosts: ['api.anthropic.com:443', '**.openai.com:443'] },
+    { source: 'kit', name: 'kit', hosts: ['github.com:443', 'mcp.atlassian.com'] },
+    { source: 'environment', name: 'environment', hosts: ['pypi.org'] },
+    { source: 'global', name: 'global', hosts: ['old.example.com'] },
+  ]);
+  assert.deepEqual(allowedHosts(undefined, 'x'), []);
+});
+
+test('covers matches hosts and ports the way sbx did (0.51.0)', () => {
+  // https://amazonaws.com answered through `**.amazonaws.com:443`; http://amazonaws.com didn't.
+  assert.ok(covers('**.amazonaws.com:443', 'amazonaws.com', 443));
+  assert.ok(!covers('**.amazonaws.com:443', 'amazonaws.com', 80));
+  assert.ok(covers('**.amazonaws.com:443', 's3.us-east-1.amazonaws.com', 443));
+  // The kit's `*.amazonaws.com` has no port: one level of subdomain, any port, not the domain.
+  assert.ok(covers('*.amazonaws.com', 's3.amazonaws.com', 80));
+  assert.ok(!covers('*.amazonaws.com', 's3.us-east-1.amazonaws.com', 80));
+  assert.ok(!covers('*.amazonaws.com', 'amazonaws.com', 80));
+  assert.ok(covers('mcp.atlassian.com', 'mcp.atlassian.com', 8443));
+  assert.ok(!covers('mcp.atlassian.com', 'atlassian.com', 443));
+});
+
+test('parseRequest reads a host, host:port or URL typed into the search', () => {
+  assert.deepEqual(parseRequest('http://amazonaws.com/'), { name: 'amazonaws.com', port: 80 });
+  assert.deepEqual(parseRequest('https://Docs.AWS.amazon.com/lambda'), { name: 'docs.aws.amazon.com', port: 443 });
+  assert.deepEqual(parseRequest('db.example.com:5432'), { name: 'db.example.com', port: 5432 });
+  assert.deepEqual(parseRequest('www.amazonaws.com'), { name: 'www.amazonaws.com', port: 443 });
+  assert.equal(parseRequest('amazon'), undefined);
+  assert.equal(parseRequest('**.amazonaws.com'), undefined);
 });
 
 test('blockedHosts keeps this sandbox\'s network requests and drops the HTTPS port', () => {

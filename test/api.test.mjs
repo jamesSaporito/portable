@@ -82,6 +82,9 @@ test('the page itself loads without the token and with a strict CSP', async (t) 
   assert.equal(page.status, 200);
   assert.match(page.headers['content-security-policy'], /default-src 'self'/);
   assert.match(page.body, /<title>portable<\/title>/);
+  const module = await call('GET', '/hosts.mjs', { token: null });
+  assert.equal(module.status, 200);
+  assert.match(module.headers['content-type'], /^text\/javascript/);
 });
 
 test('GET /api/status reports the environment', async (t) => {
@@ -120,6 +123,13 @@ test('GET /api/status reports what the agent last learned, including when sbx di
   const { call } = await startApi(t);
   // startApi's state says running; the API never asks sbx itself.
   assert.equal((await call('GET', '/api/status')).body.status, 'running');
+});
+
+test('GET /api/network lists every allowed host, and says when sbx does not answer', async (t) => {
+  const { call, sbx } = await startApi(t);
+  assert.deepEqual((await call('GET', '/api/network')).body.groups, [{ source: 'kit', name: 'kit', hosts: ['github.com'] }]);
+  sbx.networkPolicy = async () => undefined;
+  assert.equal((await call('GET', '/api/network')).status, 502);
 });
 
 test('PUT /api/settings saves overrides, applies domains and flags a needed recreate', async (t) => {

@@ -1,6 +1,9 @@
 # To do
 
 ## Before pushing
+- In-place kit update: try it once on Portfolio2 (its sandbox has no recorded kit, so the next `portable` there asks). Only a throwaway sandbox was tested; sbx may refuse sandboxes made before `kit add` could recreate them
+
+## Later
 - Node rebuild (branch `node-rebuild`): run `portable doctor` end to end once the GitHub token works again (the smoke run on 2026-11-03 got "Invalid username or token" when cloning claude-configuration, so it may have expired)
 - Node rebuild: try two `--worktree` agents in one sandbox whose stacks both want 3000, and `/start` + `/stop` on Portfolio2, opening the reported host URLs in the browser and TablePlus (needs a real project)
 - Node rebuild: install.sh's checksum-mismatch path for the Node download wasn't run (only the download, the no-op rerun and the no-terminal refusal were); fake a bad sum once with a terminal
@@ -9,10 +12,7 @@
 - Node rebuild: open a page in the browser once and click through Services (start, logs, stop) and the skill/rule checkboxes; the API is tested, the page's own JavaScript isn't
 - Node rebuild: try `install.sh --settings <repo>` on a second Mac (or a fresh user account) and check the environments come up with their hosts and sticky ports
 - Node rebuild: global hosts that an older portable added with `sbx policy allow network` (no `--sandbox`) still apply to every sandbox; list them with `sbx policy ls --wide` and remove the ones that should be per environment now
-
-- In-place kit update: try it once on Portfolio2 (its sandbox has no recorded kit, so the next `portable` there asks). Only a throwaway sandbox was tested; sbx may refuse sandboxes made before `kit add` could recreate them
-
-## Later
+- MCP hosts in the kit (2026-11-04): in a new sandbox, `claude mcp add` Atlassian, GitHub and AWS Knowledge and check each connects; Atlassian's and GitHub's OAuth sign-in may need hosts beyond the MCP endpoint (only lint and unit tests ran). The local AWS Documentation server also needs `pypi.org` and `files.pythonhosted.org` for `uvx` to install it, which aren't allowed
 - In-place kit update: `portable doctor` could check `sbx kit add` still exists (experimental in sbx 0.51.0), and whether a recreate picks up a newly stored GitHub token (untested; the README still says `portable rm` for that)
 - Kit builds now go through sbx's builder sandbox (`SBX_KIT_BUILDER=sandbox`, undocumented, found in sbx 0.51.0). Only `sbx create` was run by hand with it on this Mac (docker driver, containerd store off); run a real `portable` with it, once with the containerd store on, and recheck the variable after sbx upgrades
 - Linux hosts are out of scope on purpose (Keychain secrets); if that changes, the pieces needed are a Secret Service backend, `ss` for port detection, Docker's apt route for sbx and the linux Node builds

@@ -18,7 +18,7 @@ Same as the `start` skill:
 ## 2. Stop it
 
 ```sh
-cd "<project>" && portable docker compose down
+cd "<project>" && portable exec docker compose down
 ```
 
 - Never add `-v`/`--volumes` or `--rmi`: volumes hold the project's databases and `node_modules`. Only if the user explicitly asks to wipe its data, and confirm first.
@@ -27,7 +27,7 @@ cd "<project>" && portable docker compose down
 ## 3. Report
 
 ```sh
-cd "<project>" && portable docker compose ps --all
+cd "<project>" && portable exec docker compose ps --all
 ```
 
 Confirm nothing is left, or list what still is. `portable` drops the Mac-side forwards of ports that went away when the command returns, so there's nothing to clean up on the Mac.

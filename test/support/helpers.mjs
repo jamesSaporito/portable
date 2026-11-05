@@ -42,6 +42,7 @@ export function fakeSbx({ sandboxes = [], published = {}, refuse = [] } = {}) {
       return { code: 0, stdout: '', stderr: '' };
     },
     async secrets() { return [{ name: 'github', scope: 'global', stored: true }]; },
+    async networkPolicy() { return [{ source: 'kit', name: 'kit', hosts: ['github.com'] }]; },
     approvalsList: [],
     async approvals(name) { return this.approvalsList.filter((a) => a.sandbox === name); },
     async respond(id, option) { calls.push(['respond', id, option]); this.approvalsList = this.approvalsList.filter((a) => a.id !== id); return true; },

@@ -18,7 +18,7 @@ Runs the project's `docker compose up` through `bin/portable`, so it goes to the
 From the project folder (`portable` uses the sandbox for the folder it's run in, creating it on first use):
 
 ```sh
-cd "<project>" && portable docker compose up --build --detach
+cd "<project>" && portable exec docker compose up --build --detach
 ```
 
 - Allow up to 10 minutes; the first build, and creating the sandbox the first time, can be slow.
@@ -29,10 +29,10 @@ cd "<project>" && portable docker compose up --build --detach
 ## 3. Report
 
 ```sh
-cd "<project>" && portable docker compose ps --all
+cd "<project>" && portable exec docker compose ps --all
 ```
 
-Give each service's state, and flag any that exited non-zero (show the last lines of `portable docker compose logs <service>`).
+Give each service's state, and flag any that exited non-zero (show the last lines of `portable exec docker compose logs <service>`).
 
 Then the Mac URLs. `portable` forwards every port the stack publishes to the Mac after the command above returns, at the same number when the Mac has it free and otherwise at the next free one. List the mapping:
 
