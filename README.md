@@ -43,7 +43,7 @@ Add a project's hosts on its environment page (**Sandbox settings → Extra allo
 Each sandbox has its own Docker engine. Claude can `docker compose up` a project and run its tests; the containers see the session's folder at its host path, so bind mounts in a compose file work unchanged.
 
 - **Ports:** a port a container publishes is on `localhost` inside the sandbox, and portable forwards it to your computer's `127.0.0.1` within a few seconds. The first time, it gets the same number when the host has it free, so the project's usual `localhost` URLs work in your browser and TablePlus, otherwise the next free number (another sandbox or a host process had it). Then it **sticks**: the environment remembers the host port and uses it again every time, and other environments leave it alone. Change it on the environment page if you want another one. The forwarding runs in the environment's host agent, which also serves its page, for as long as the sandbox runs, and forwards are dropped when the container goes. If sbx stops answering for a moment (its daemon restarting, say), the agent keeps everything as it is and tries again rather than tearing forwards down. `portable ports` lists them for the folder's sandbox (`portable ports NAME` for another, or every running one from outside the workspace); `portable ps` and the page show them too, and inside the sandbox `/etc/portable/ports` holds the mapping, so Claude reports the host URL after `/start`. Only TCP ports published on all interfaces count (`-p 3000:80`, the usual form); one bound to `127.0.0.1` inside the sandbox stays there.
-- **Data:** images, containers and volumes (databases, for example) live in the sandbox and survive stops and restarts. `portable rm NAME` deletes them with the sandbox.
+- **Data:** images, containers and volumes (databases, for example) live in the sandbox and survive stops and restarts, and updates of portable's kit (see [Updating portable](#updating-portable)). `portable rm NAME` deletes them with the sandbox.
 - **Lifetime:** a sandbox keeps running after your session ends, with whatever Claude started, and stops when nothing uses it. `portable ps` lists them, `portable stop NAME` pauses one.
 - **Node projects:** the workspace's `node_modules` holds your computer's install, with native binaries built for it. Installing over it from the sandbox would swap in the sandbox's and break the project on your computer until you reinstall there. Run installs and checks through the project's compose services instead, with `node_modules` in a volume. The sandbox's `CLAUDE.md` (`kit/files/claude-instructions.md`) tells Claude this.
 
@@ -222,6 +222,7 @@ Each time you run `portable`:
 - **Network policy:** the environment's allowed hosts are set as rules for its sandbox.
 - **AWS:** if the environment has it turned on, fresh credentials are written into the sandbox for new sessions (a signed-out profile is reported; sign in on the page).
 - **Claude configuration:** if the skills and rules to turn off changed in `config.json`, the sandbox is told.
+- **Kit:** if portable's kit changed since the sandbox was made, it asks whether to update the sandbox in place (see [Updating portable](#updating-portable)).
 - **Page and ports:** the environment's host agent is started if it isn't running. It forwards ports containers publish (checking every 5 seconds) and serves the page until the sandbox stops. A one-off command, e.g. `portable docker compose up -d`, forwards what it started when it returns.
 
 When a sandbox boots:
@@ -272,7 +273,14 @@ On another Mac, install with it:
 portable update
 ```
 
-Lists the new commits on GitHub and moves the installed copy forward to them. It refuses if the installed copy has changes of its own; make changes in a clone instead. A changed kit (`kit/`) rebuilds when the next sandbox is created; existing sandboxes keep the kit they were made with, so `portable rm` them to pick it up. `portable doctor` warns when an update is waiting.
+Lists the new commits on GitHub and moves the installed copy forward to them. It refuses if the installed copy has changes of its own; make changes in a clone instead. `portable doctor` warns when an update is waiting.
+
+When an update changes the kit (`kit/`), the next `portable` in each environment asks whether to update its sandbox in place. On yes, sbx rebuilds the kit and recreates the sandbox's container (`sbx kit add` with the empty mixin in `kit-refresh/`; an experimental sbx command), and portable starts the containers that were running again and reopens their forwards. Say no, or run without a terminal, and the sandbox keeps its kit until you're asked next time. What an update keeps and what it doesn't:
+
+- **Kept:** Docker's images, containers and volumes (databases included), the home folder with Claude's history, files written in the sandbox, its settings, allowed hosts and sticky ports.
+- **Ended:** Claude sessions and shells running in the sandbox. Containers come back stopped if they weren't running before.
+- **Asked:** if the new kit allows more than the old one (another host, say), sbx lists it and asks before granting it.
+- **Still needs `portable rm`:** new CPUs or memory, and a new GitHub token.
 
 ### Changing portable itself
 
@@ -284,7 +292,7 @@ To try a change before merging, run the clone directly on your computer, e.g. `~
 
 ## Updating tool versions
 
-The base image is pinned by digest in `kit/portable.dockerfile` (`debian:trixie-slim`), so two Macs build the same image weeks apart; `docker buildx imagetools inspect <image:tag>` gives the digest of a newer tag. The tool versions are pinned in `kit/portable.dockerfile` (`TERRAFORM_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSION`) with the SHA-256 of each download next to them; change both. Claude Code comes from sbx's built-in `claude` agent (`WORKLOAD` in `lib/sbx.mjs`), so its starting version follows the installed sbx; the pinned `docker/sbx-kit-claude` image was dropped because `/login` can't sign in with it. New sandboxes get the new versions; `portable rm` existing ones to rebuild them.
+The base image is pinned by digest in `kit/portable.dockerfile` (`debian:trixie-slim`), so two Macs build the same image weeks apart; `docker buildx imagetools inspect <image:tag>` gives the digest of a newer tag. The tool versions are pinned in `kit/portable.dockerfile` (`TERRAFORM_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSION`) with the SHA-256 of each download next to them; change both. Claude Code comes from sbx's built-in `claude` agent (`WORKLOAD` in `lib/sbx.mjs`), so its starting version follows the installed sbx; the pinned `docker/sbx-kit-claude` image was dropped because `/login` can't sign in with it. New sandboxes get the new versions, and existing ones when `portable` updates their kit in place (see [Updating portable](#updating-portable)).
 
 ## Verify the setup
 

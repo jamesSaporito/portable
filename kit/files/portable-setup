@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs inside the sandbox (installed by the kit overlay as /usr/local/bin/portable-setup).
 #
-#   portable-setup install    lifecycle install hook, as root, once when the sandbox is created:
+#   portable-setup install    lifecycle install hook, as root, when the sandbox is created and again
+#                             each time portable updates its kit in place (so it must be rerunnable):
 #                             clones PORTABLE_CLAUDE_CONFIG_REPO, links it into ~/.claude with the
 #                             repo's own install.sh, and points git at gh for GitHub credentials
 #   portable-setup update     lifecycle startup hook, as root, at every boot: fetches the repo and,
@@ -165,7 +166,8 @@ cmd_install() {
   # placeholder; the proxy swaps in the real token). Same wiring as Docker's github-clone kit.
   git config --system credential.https://github.com.helper '!gh auth git-credential'
   git config --system credential.https://gist.github.com.helper '!gh auth git-credential'
-  git config --system --add safe.directory "$config_dir"
+  git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$config_dir" \
+    || git config --system --add safe.directory "$config_dir"
   if [ -z "$(config_repo)" ]; then
     warn "no Claude configuration repo set (claudeConfigRepo); skipping"
     return 0

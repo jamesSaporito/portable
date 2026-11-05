@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadEnv, saveEnv } from '../lib/config.mjs';
-import { candidates, parseLsof, syncPorts, takenPorts } from '../lib/ports.mjs';
+import { candidates, parseLsof, reopenForwards, syncPorts, takenPorts } from '../lib/ports.mjs';
 import { fakeRunner, fakeSbx, tempHome } from './support/helpers.mjs';
 
 const LSOF = `COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
@@ -115,4 +115,17 @@ test('syncPorts uses the sandbox list it is given and gives up when sbx did not 
   const result = await syncPorts({ sbx, runner: fakeRunner({ lsof: 'H\n' }), paths, env: env(paths), sandboxes: sbx.sandboxes });
   assert.deepEqual(result.forwards, [{ host: 3000, sandbox: 3000 }]);
   assert.equal(listed, 1);
+});
+
+test('reopenForwards closes and reopens each forward at the same host port', async () => {
+  const sbx = fakeSbx({ sandboxes: [{ name: 'portable-a', ports: [
+    { host_port: 5432, sandbox_port: 5432, protocol: 'tcp4' },
+    { host_port: 3001, sandbox_port: 3000, protocol: 'tcp4' },
+  ] }], refuse: [3001] });
+  const failed = await reopenForwards(sbx, 'portable-a');
+  assert.deepEqual(sbx.calls, [
+    ['unpublish', 'portable-a', 5432, 5432], ['publish', 'portable-a', 5432, 5432],
+    ['unpublish', 'portable-a', 3001, 3000], ['publish', 'portable-a', 3001, 3000],
+  ]);
+  assert.deepEqual(failed, [{ host: 3001, sandbox: 3000 }]);
 });

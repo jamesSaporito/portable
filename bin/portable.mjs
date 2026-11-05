@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline/promises';
 import { loadEnv, listEnvs, saveEnv, updateEnv } from '../lib/config.mjs';
 import {
   ROOT, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, createContext, createSandbox, ensureAgent,
-  readAgent, refreshAws, settingsFor, stopAgent,
+  kitOutdated, readAgent, refreshAws, refreshKit, settingsFor, stopAgent,
 } from '../lib/environment.mjs';
 import { PREFIX, UserError, envByName, resolveEnv, sessionFolder, workspaceFolder } from '../lib/env.mjs';
 import { portsTable, syncPorts } from '../lib/ports.mjs';
@@ -68,7 +68,20 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
   if (!(await ctx.sbx.wake(env.sandbox))) throw new UserError(`the sandbox ${env.sandbox} isn't there anymore, or sbx didn't answer; try again`);
   env = loadEnv(ctx.paths, env.id);
 
-  const problems = await applyDomains(ctx, env, settings);
+  const problems = [];
+  // portable's kit changed since the sandbox was made (`portable update`): offer to apply it in place.
+  if (existing && kitOutdated(env)) {
+    if (await confirm(`portable's kit changed since ${env.id}'s sandbox was made. Update the sandbox now? Its Docker data and Claude history are kept; sessions running in it end`)) {
+      const result = await refreshKit(ctx, env);
+      if (result === undefined) say(`couldn't update the sandbox ${env.sandbox}; it keeps its current kit`);
+      else problems.push(...result);
+      env = loadEnv(ctx.paths, env.id);
+    } else {
+      say(`${env.id} keeps its current kit; you'll be asked again next time`);
+    }
+  }
+
+  problems.push(...await applyDomains(ctx, env, settings));
   // AWS only when this environment turned it on; an expired session is reported, not signed in
   // here (the page's Sign in button does that, as does `aws sso login`).
   problems.push(...await refreshAws(ctx, env, settings));
@@ -241,6 +254,7 @@ async function stopOrRemove(ctx, command, name) {
     updateEnv(ctx.paths, env.id, (stored) => {
       delete stored.createdWith;
       delete stored.appliedDisable;
+      delete stored.kit;
     });
     out(`Its settings and ports are kept for the next 'portable' in ${env.path}.`);
   }

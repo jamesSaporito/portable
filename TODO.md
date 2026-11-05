@@ -10,7 +10,10 @@
 - Node rebuild: try `install.sh --settings <repo>` on a second Mac (or a fresh user account) and check the environments come up with their hosts and sticky ports
 - Node rebuild: global hosts that an older portable added with `sbx policy allow network` (no `--sandbox`) still apply to every sandbox; list them with `sbx policy ls --wide` and remove the ones that should be per environment now
 
+- In-place kit update: try it once on Portfolio2 (its sandbox has no recorded kit, so the next `portable` there asks). Only a throwaway sandbox was tested; sbx may refuse sandboxes made before `kit add` could recreate them
+
 ## Later
+- In-place kit update: `portable doctor` could check `sbx kit add` still exists (experimental in sbx 0.51.0), and whether a recreate picks up a newly stored GitHub token (untested; the README still says `portable rm` for that)
 - Kit builds now go through sbx's builder sandbox (`SBX_KIT_BUILDER=sandbox`, undocumented, found in sbx 0.51.0). Only `sbx create` was run by hand with it on this Mac (docker driver, containerd store off); run a real `portable` with it, once with the containerd store on, and recheck the variable after sbx upgrades
 - Linux hosts are out of scope on purpose (Keychain secrets); if that changes, the pieces needed are a Secret Service backend, `ss` for port detection, Docker's apt route for sbx and the linux Node builds
 - The environment page has no way to recreate a sandbox (for new CPUs/memory); it shows the commands instead, since that deletes Docker data. Add a button with a confirmation if that gets tedious
