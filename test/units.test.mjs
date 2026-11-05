@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { addedDomains, allowedHosts, blockedHosts, createSbx, parsePublished, tcpForwards, versionAtLeast } from '../lib/sbx.mjs';
 import { parseExport } from '../lib/aws.mjs';
 import { covers, parseRequest } from '../lib/ui/hosts.mjs';
-import { claudeArgs, versionLine } from '../bin/portable.mjs';
+import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
 
 test('parsePublished keeps TCP ports published on all interfaces', () => {
   const text = '0.0.0.0 3000 3000/tcp\n:: 3000 3000/tcp\n127.0.0.1 9229 9229/tcp\n0.0.0.0 5353 5353/udp\n0.0.0.0 80 8080/tcp\n';
@@ -69,6 +69,26 @@ test('parseExport only takes the AWS credential names', () => {
     AWS_SECRET_ACCESS_KEY: 's',
     AWS_SESSION_TOKEN: 't',
   });
+});
+
+test('parseCommand takes only portable\'s own commands, and --name only before claude or exec', () => {
+  assert.deepEqual(parseCommand([]), { command: 'shell', name: undefined, args: [] });
+  assert.deepEqual(parseCommand(['claude', '--worktree', 'x']), { command: 'claude', name: undefined, args: ['--worktree', 'x'] });
+  assert.deepEqual(parseCommand(['configure']), { command: 'configure', args: [] });
+  assert.deepEqual(parseCommand(['ui', 'api']), { command: 'ui', args: ['api'] });
+  assert.deepEqual(parseCommand(['exec', 'docker', 'compose', 'up', '-d']), { command: 'exec', name: undefined, args: ['docker', 'compose', 'up', '-d'] });
+  assert.deepEqual(parseCommand(['--name', 'blah']), { command: 'shell', name: 'blah', args: [] });
+  assert.deepEqual(parseCommand(['--name', 'api', 'claude']), { command: 'claude', name: 'api', args: [] });
+  assert.deepEqual(parseCommand(['--name', 'api', 'exec', 'ls']), { command: 'exec', name: 'api', args: ['ls'] });
+
+  // Anything else is refused before portable touches settings or sbx.
+  assert.throws(() => parseCommand(['blah']), /unknown command 'blah'; see 'portable help' \(to run it in the sandbox: portable exec blah\)/);
+  assert.throws(() => parseCommand(['terraform', 'plan']), /unknown command 'terraform'/);
+  assert.throws(() => parseCommand(['--bogus']), /unknown option '--bogus'/);
+  assert.throws(() => parseCommand(['--name', 'api', 'ps']), /unknown command 'ps' after --name api; see 'portable help' \(to run it in the sandbox: portable --name api exec ps\)/);
+  assert.throws(() => parseCommand(['--name']), /usage: portable --name NAME/);
+  assert.throws(() => parseCommand(['--name', '--x']), /usage: portable --name NAME/);
+  assert.throws(() => parseCommand(['exec']), /usage: portable exec CMD/);
 });
 
 test('claudeArgs asks before acting unless a permission flag is given', () => {

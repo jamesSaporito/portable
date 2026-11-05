@@ -15,9 +15,10 @@ import { runDoctor } from '../lib/doctor.mjs';
 import { configure } from '../lib/configure.mjs';
 import { updatePortable } from '../lib/update.mjs';
 
-const USAGE = `Runs a command in the sandbox for the current folder, or a shell when given none.
-  portable [--name NAME] [command]    -> bash (or the command) in the folder's sandbox
-  portable claude [args]               -> Claude Code in the sandbox
+const USAGE = `Works with the sandbox for the current folder; --name NAME picks a separate, named one.
+  portable [--name NAME]               -> bash in the folder's sandbox
+  portable [--name NAME] claude [args] -> Claude Code in the sandbox
+  portable [--name NAME] exec CMD...   -> run one command in the sandbox, e.g. exec docker compose up -d
   portable ui [NAME]                   -> open the environment's page (ports, services, settings)
   portable ps                          -> list portable's sandboxes
   portable ports [NAME]                -> sync and list the ports forwarded to this computer
@@ -133,7 +134,7 @@ async function runIn(ctx, name, command) {
   if (command[0] === 'claude') {
     return ctx.runner.runInteractive('sbx', ['exec', ...tty, '-w', env.path, env.sandbox, 'claude', ...claudeArgs(command.slice(1))]);
   }
-  // A one-off command, e.g. `portable docker compose up -d`: forward what it started right away.
+  // A one-off command, e.g. `portable exec docker compose up -d`: forward what it started right away.
   const before = await ctx.sbx.forwards(env.sandbox);
   const code = await ctx.runner.runInteractive('sbx', ['exec', ...tty, env.sandbox, ...command]);
   const after = await agentSync(ctx, env.id);
@@ -268,10 +269,41 @@ async function secret(ctx, action, name) {
   return code;
 }
 
+// Commands that don't take --name; anything not here, `claude` or `exec` is refused.
+const COMMANDS = ['secret', 'configure', 'ps', 'ports', 'ui', 'stop', 'rm', 'prune', 'doctor', 'update',
+  '-v', '--version', 'version', '--help', '-h', 'help'];
+
+// What to do, before anything reads settings or asks sbx, so a mistyped command does nothing:
+// { command: 'shell' | 'claude' | 'exec', name, args } for the sandbox, { command, args } otherwise.
+export function parseCommand(argv) {
+  let name;
+  let rest = argv;
+  if (rest[0] === '--name') {
+    name = rest[1];
+    if (!name || name.startsWith('-')) usage('portable --name NAME [claude [args] | exec CMD...]');
+    rest = rest.slice(2);
+  }
+  const [command, ...args] = rest;
+  if (command === undefined) return { command: 'shell', name, args: [] };
+  if (command === 'claude') return { command, name, args };
+  if (command === 'exec') {
+    if (!args.length) usage('portable exec CMD... (e.g. portable exec docker compose up -d)');
+    return { command, name, args };
+  }
+  if (name === undefined && COMMANDS.includes(command)) return { command, args };
+  if (name === undefined && command.startsWith('-')) throw new UserError(`unknown option '${command}'; see 'portable help'`);
+  const named = name === undefined ? '' : ` --name ${name}`;
+  throw new UserError(`unknown command '${command}'${named && ` after${named}`}; see 'portable help' (to run it in the sandbox: portable${named} exec ${command})`);
+}
+
 async function main(argv) {
+  const parsed = parseCommand(argv);
   const ctx = createContext();
-  const [command, ...rest] = argv;
-  switch (command) {
+  const rest = parsed.args;
+  switch (parsed.command) {
+    case 'shell': return runIn(ctx, parsed.name, []);
+    case 'claude': return runIn(ctx, parsed.name, ['claude', ...rest]);
+    case 'exec': return runIn(ctx, parsed.name, rest);
     case 'secret': return secret(ctx, rest[0], rest[1]);
     case 'configure':
       return configure({ secrets: ctx.secrets, sbx: ctx.sbx, ask: confirm, write: out, interactive: Boolean(process.stdin.isTTY) });
@@ -279,7 +311,7 @@ async function main(argv) {
     case 'ports': return ports(ctx, rest[0]);
     case 'ui': return ui(ctx, rest[0]);
     case 'stop':
-    case 'rm': return stopOrRemove(ctx, command, rest[0]);
+    case 'rm': return stopOrRemove(ctx, parsed.command, rest[0]);
     case 'prune': return prune(ctx);
     case 'doctor': return runDoctor(ctx, { sandbox: !rest.includes('--no-sandbox') });
     case 'update': return updatePortable(ctx.runner, ctx.paths.installDir);
@@ -291,11 +323,8 @@ async function main(argv) {
     case '-h':
     case 'help':
       return out(USAGE);
-    case '--name':
-      if (!rest[0]) usage('portable --name NAME [command]');
-      return runIn(ctx, rest[0], rest.slice(1));
     default:
-      return runIn(ctx, undefined, argv);
+      throw new Error(`parseCommand let through '${parsed.command}'`);
   }
 }
 
