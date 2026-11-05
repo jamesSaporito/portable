@@ -1,7 +1,6 @@
 # To do
 
 ## Before pushing
-- In-place kit update: try it once on Portfolio2 (its sandbox has no recorded kit, so the next `portable` there asks). Only a throwaway sandbox was tested; sbx may refuse sandboxes made before `kit add` could recreate them
 
 ## Later
 - Node rebuild (branch `node-rebuild`): run `portable doctor` end to end once the GitHub token works again (the smoke run on 2026-11-03 got "Invalid username or token" when cloning claude-configuration, so it may have expired)
