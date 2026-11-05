@@ -5,6 +5,11 @@ import { addedDomains, allowedHosts, blockedHosts, createSbx, parsePublished, tc
 import { parseExport } from '../lib/aws.mjs';
 import { covers, parseRequest } from '../lib/ui/hosts.mjs';
 import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { KIT, kitHash, kitOutdated, refreshKit } from '../lib/environment.mjs';
+import { loadEnv, saveEnv } from '../lib/config.mjs';
+import { fakeSbx, tempHome } from './support/helpers.mjs';
 
 test('parsePublished keeps TCP ports published on all interfaces', () => {
   const text = '0.0.0.0 3000 3000/tcp\n:: 3000 3000/tcp\n127.0.0.1 9229 9229/tcp\n0.0.0.0 5353 5353/udp\n0.0.0.0 80 8080/tcp\n';
@@ -168,4 +173,66 @@ test('versionLine shows the version, the commit and whether the copy has changes
   assert.equal(versionLine('3.0.0', 'abc1234', false), 'portable 3.0.0 (abc1234)');
   assert.equal(versionLine('3.0.0', 'abc1234', true), 'portable 3.0.0 (abc1234, with local changes)');
   assert.equal(versionLine('3.0.0', '', false), 'portable 3.0.0');
+});
+
+test('kitHash changes with a kit file\'s contents, mode or name', (t) => {
+  const { home: dir } = tempHome(t);
+  fs.mkdirSync(path.join(dir, 'files'));
+  fs.writeFileSync(path.join(dir, 'portable.yaml'), 'a');
+  fs.writeFileSync(path.join(dir, 'files', 'setup'), 'b');
+  const first = kitHash(dir);
+  assert.equal(kitHash(dir), first);
+  fs.chmodSync(path.join(dir, 'files', 'setup'), 0o755);
+  const executable = kitHash(dir);
+  assert.notEqual(executable, first);
+  fs.writeFileSync(path.join(dir, 'files', 'setup'), 'c');
+  assert.notEqual(kitHash(dir), executable);
+  fs.renameSync(path.join(dir, 'files', 'setup'), path.join(dir, 'files', 'other'));
+  assert.notEqual(kitHash(dir), executable);
+  assert.match(kitHash(KIT), /^[0-9a-f]{16}$/);
+});
+
+test('sbx.addKit runs sbx kit add in the terminal, building in the builder sandbox', async () => {
+  let seen;
+  const sbx = createSbx({ runInteractive: async (cmd, args, opts) => { seen = [cmd, args, opts.env.SBX_KIT_BUILDER]; return 0; } });
+  const saved = process.env.SBX_KIT_BUILDER;
+  try {
+    delete process.env.SBX_KIT_BUILDER;
+    assert.equal(await sbx.addKit('portable-app', '/kit-refresh'), 0);
+    assert.deepEqual(seen, ['sbx', ['kit', 'add', 'portable-app', '/kit-refresh'], 'sandbox']);
+  } finally {
+    if (saved !== undefined) process.env.SBX_KIT_BUILDER = saved;
+  }
+});
+
+test('refreshKit recreates the sandbox, restarts what ran before, reopens forwards and records the kit', async (t) => {
+  const { paths } = tempHome(t);
+  saveEnv(paths, { id: 'app', path: '/w/app', sandbox: 'portable-app', overrides: {}, ports: { 5432: 5432 } });
+  const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app', ports: [{ host_port: 5432, sandbox_port: 5432, protocol: 'tcp4' }] }] });
+  sbx.exec = async (name, command) => {
+    sbx.calls.push(['exec', name, command]);
+    return { code: 0, stdout: command[1] === 'ps' ? 'c1\nc2\n' : '', stderr: '' };
+  };
+  sbx.addKit = async (name, kit) => { sbx.calls.push(['addKit', name, path.basename(kit)]); return 0; };
+  const ctx = { sbx, paths };
+  assert.ok(kitOutdated(loadEnv(paths, 'app')));
+
+  assert.deepEqual(await refreshKit(ctx, loadEnv(paths, 'app')), []);
+  assert.deepEqual(sbx.calls, [
+    ['exec', 'portable-app', ['docker', 'ps', '-q']],
+    ['addKit', 'portable-app', 'kit-refresh'],
+    ['exec', 'portable-app', ['docker', 'start', 'c1', 'c2']],
+    ['unpublish', 'portable-app', 5432, 5432],
+    ['publish', 'portable-app', 5432, 5432],
+  ]);
+  assert.ok(!kitOutdated(loadEnv(paths, 'app')));
+});
+
+test('refreshKit leaves the recorded kit alone when sbx refuses', async (t) => {
+  const { paths } = tempHome(t);
+  saveEnv(paths, { id: 'app', path: '/w/app', sandbox: 'portable-app', overrides: {}, ports: {}, kit: 'old' });
+  const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app' }] });
+  sbx.addKit = async () => 1;
+  assert.equal(await refreshKit({ sbx, paths }, loadEnv(paths, 'app')), undefined);
+  assert.equal(loadEnv(paths, 'app').kit, 'old');
 });
