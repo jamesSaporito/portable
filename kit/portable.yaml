@@ -49,6 +49,18 @@ capabilities:
           # bucket or API Gateway endpoint is a reachable destination (see README, Network).
           - "*.amazonaws.com"
           - sts.amazonaws.com
+          # Remote MCP servers. Atlassian Rovo (https://mcp.atlassian.com/v2/mcp, OAuth):
+          # https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/
+          - mcp.atlassian.com
+          # GitHub (https://api.githubcopilot.com/mcp/): https://github.com/github/github-mcp-server
+          - api.githubcopilot.com
+          # AWS Knowledge, docs without an AWS account: https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server
+          - knowledge-mcp.global.api.aws
+          # The local AWS Documentation MCP server reads, searches and recommends from these:
+          # https://github.com/awslabs/mcp/blob/main/src/aws-documentation-mcp-server/awslabs/aws_documentation_mcp_server/server_aws.py
+          - docs.aws.amazon.com
+          - proxy.search.docs.aws.com
+          - api.contentrecs.docs.aws.com
 
   # GitHub token from the host's Keychain (macOS), held by sbx and put on requests by the proxy; the sandbox
   # only sees a placeholder in GH_TOKEN. install.sh registers the source:

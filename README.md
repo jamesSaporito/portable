@@ -35,8 +35,9 @@ sbx proxies every outbound TCP connection through the host and refuses destinati
 - **GitHub:** web, API, git over HTTPS and release downloads.
 - **npm, Terraform's registry and HashiCorp releases, Docker Hub, the Alpine and Debian package mirrors.**
 - **AWS:** `*.amazonaws.com`, so every AWS API works, Lambda and Secrets Manager included.
+- **MCP servers:** Atlassian's (`mcp.atlassian.com`), GitHub's (`api.githubcopilot.com`) and AWS docs, both the hosted AWS Knowledge server (`knowledge-mcp.global.api.aws`) and the hosts the local AWS Documentation server calls (`docs.aws.amazon.com`, `proxy.search.docs.aws.com`, `api.contentrecs.docs.aws.com`). The servers still have to be added to Claude (`claude mcp add`); this only lets them through.
 
-Add a project's hosts on its environment page (**Sandbox settings → Extra allowed hosts**, e.g. `pypi.org` and `files.pythonhosted.org`), or for every environment with `allowDomains` in `config.json`. portable adds them as rules scoped to that one sandbox (`sbx policy allow network --sandbox`), so one project's hosts don't open up the others; `sbx policy ls <sandbox>` shows the result. Docker's Claude workload adds Anthropic's hosts itself. A blocked host fails fast with "connection refused" or a TLS error; the sandbox's `CLAUDE.md` tells Claude to report the host rather than work around it.
+Add a project's hosts on its environment page (**Network → Extra allowed hosts**, e.g. `pypi.org` and `files.pythonhosted.org`), or for every environment with `allowDomains` in `config.json`. portable adds them as rules scoped to that one sandbox (`sbx policy allow network --sandbox`), so one project's hosts don't open up the others; `sbx policy ls <sandbox>` shows the result. Docker's Claude workload adds Anthropic's hosts itself. A blocked host fails fast with "connection refused" or a TLS error; the sandbox's `CLAUDE.md` tells Claude to report the host rather than work around it.
 
 ### Docker
 
@@ -156,7 +157,8 @@ The page has:
 
 - **Ports:** each forward, a link to open it, and its sticky host port, which you can change (the forward moves there right away, or as soon as the port is free) or forget. A host port another of the environment's ports, or another environment, already sticks to is refused.
 - **Services:** the compose files in the folder and the two levels below it, with their containers. Start (`docker compose up --build --detach`), restart and stop them, and follow their logs, all in the sandbox's own Docker.
-- **Sandbox settings:** extra allowed hosts, and CPUs and memory. Hosts apply at once; CPUs and memory say what to run to recreate the sandbox.
+- **Network:** every host the sandbox can reach and every host it tried that was refused, in one grid with each rule's port, where it comes from (sbx's own defaults, the kit, this environment) and whether it's allowed or blocked. A rule covers only its port: sbx's defaults are HTTPS (443), so `http://` to the same host is refused. Type a host, URL or `host:port` in the search to see whether a request would be allowed and by which rule. Add this environment's extra allowed hosts at the top (they apply at once), and allow or dismiss a blocked host in the list.
+- **Sandbox settings:** CPUs and memory, which say what to run to recreate the sandbox.
 - **AWS:** off by default. Turn it on with one of this computer's profiles, sign in through SSO from the page, refresh the credentials, or turn it off again.
 - **Claude configuration:** the configuration repo's URL, which you can set or change (it's the same for every environment; blank removes it), its commit, a button to update it from GitHub, and a checkbox for each skill and rule. Turning one off applies to new Claude sessions and survives restarts.
 - **Secrets:** whether each token is stored and whether sbx reads it, and whether Claude is signed in. Never the values.
@@ -276,7 +278,7 @@ Lists the new commits on GitHub and moves the installed copy forward to them. It
 
 ### Changing portable itself
 
-The version is `version` in `package.json`; bump it when a change is worth telling apart (`portable -v` shows the commit as well, so it isn't needed for every merge). `npm test` runs the tests (Node's built-in runner, no dependencies) and `npm run lint` checks the syntax of every script. They need a Node on your `PATH`; portable's own is at `~/.local/share/portable-node/current/bin`.
+The version is `version` in `package.json`; bump it when a change is worth telling apart (`portable -v` shows the commit as well, so it isn't needed for every merge). `npm test` runs the tests (Node's built-in runner, no dependencies) and `npm run lint` checks the syntax of every script: `lint:js` the JavaScript, `lint:sh` the shell scripts. `npm run test:ui` runs the environment page's browser tests (`ui-tests/`) with Playwright, the project's only dependency (a dev one: run `npm install` once). They use your installed Google Chrome headless, so Playwright doesn't download a browser. They need a Node on your `PATH`; portable's own is at `~/.local/share/portable-node/current/bin`.
 
 Work in a clone (e.g. `~/Projects/portable`), in portable like any other project, and merge the change on GitHub. Then `portable update` brings it to the installed copy. Nothing a session writes reaches the launcher you run until you've merged it; see [Limits](#limits) for protecting the branch.
 
