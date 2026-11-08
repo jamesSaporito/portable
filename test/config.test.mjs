@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  DEFAULTS, effectiveSettings, fromEnvVars, initGlobal, loadEnv, loadGlobal, saveEnv, updateEnv, validateOverrides, validateRepo,
+  DEFAULTS, effectiveSettings, fromEnvVars, initGlobal, loadEnv, loadGlobal, updateEnv, validateOverrides, validateRepo,
 } from '../lib/config.mjs';
-import { tempHome } from './support/helpers.mjs';
+import { saveAppEnv, tempHome } from './support/helpers.mjs';
 
 test('fromEnvVars maps the shell variable names and splits lists', () => {
   assert.deepEqual(fromEnvVars({ PORTABLE_ALLOW_DOMAINS: 'a.org  b.org', PORTABLE_CLAUDE_CONFIG_REPO: 'r', OTHER: 'x' }), {
@@ -60,7 +60,7 @@ test('validateOverrides accepts good values and rejects bad ones', () => {
 
 test('updateEnv re-reads before writing, so concurrent writers keep each other\'s changes', (t) => {
   const { paths } = tempHome(t);
-  saveEnv(paths, { id: 'app', path: '/w/app', sandbox: 'portable-app', overrides: {}, ports: {} });
+  saveAppEnv(paths);
   updateEnv(paths, 'app', (e) => { e.ports[3000] = 3001; });
   updateEnv(paths, 'app', (e) => { e.overrides.awsProfile = 'x'; });
   const env = loadEnv(paths, 'app');

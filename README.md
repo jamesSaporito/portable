@@ -85,7 +85,7 @@ Without a token, public repos still clone, but `git push` and `gh` in the sandbo
 4. **Permissions:** *Contents* read and write, *Pull requests* read and write.
 5. Generate it, then run `portable configure`. It asks "Store it now? [y/N]" and opens the Keychain's hidden prompt, which asks for the value twice.
 
-Sandboxes pick up the token when they're created, so after storing a new one, `portable rm` the sandboxes that should use it. A fine-grained token reaches one owner only (your account or one organization). See [Limits](#limits) for why the default branches of portable and your configuration repo should be protected.
+To replace the token, run `portable configure` again. Existing sandboxes use the new one without a restart, though sbx caches the old one for up to 55 minutes ([Docker docs](https://docs.docker.com/ai/sandboxes/configuration/credentials/)). If cloning your configuration repo failed for lack of a token, the next start of the sandbox clones it. A fine-grained token reaches one owner only (your account or one organization). See [Limits](#limits) for why the default branches of portable and your configuration repo should be protected.
 
 ### 4. Check the setup
 
@@ -110,7 +110,7 @@ portable -v              # portable's version and commit, e.g. portable x.x.x (a
 portable help            # Every command
 ```
 
-Claude asks before running commands and editing files, since a sandbox limits what Claude can reach but not what it spends. Pass a permission flag to choose another mode, e.g. `portable claude --permission-mode acceptEdits`, or `portable claude --dangerously-skip-permissions` for no prompts.
+Claude asks before running commands and editing files, since a sandbox limits what Claude can reach but not what it spends. That holds both for `portable claude` and for `claude` typed in a `portable` shell. Bypass mode stays one Shift+Tab away but is never on at the start. Pass a permission flag to start in another mode, e.g. `portable claude --permission-mode acceptEdits`, or `portable claude --dangerously-skip-permissions` for no prompts.
 
 ### Choosing what Claude can see
 
@@ -267,7 +267,7 @@ Your Mac's `~/.claude` links into the configuration repo's installed copy in `~/
 portable update
 ```
 
-It lists the new commits on GitHub and moves the installed copy to them. A changed kit only applies to new sandboxes, so `portable rm` existing ones to pick it up. `portable doctor` warns when an update is waiting.
+It lists the new commits on GitHub and moves the installed copy to them. When the kit changed, the next `portable` in each environment offers to update its sandbox in place, keeping its Docker data and Claude history. `portable doctor` warns when an update is waiting.
 
 Tool versions (`TERRAFORM_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSION`) and the base image digest are pinned in `kit/portable.dockerfile`, each with its SHA-256; change both together. Claude Code comes from sbx's built-in `claude` agent, so its version follows the installed sbx.
 
@@ -276,14 +276,14 @@ Tool versions (`TERRAFORM_VERSION`, `GH_VERSION`, `PNPM_VERSION`, `AWS_CLI_VERSI
 Work in your clone (`~/Projects/portable`), in portable like any other project, and merge the change on GitHub; then `portable update` brings it to the installed copy. To try a change before merging, run the clone directly, e.g. `~/Projects/portable/bin/portable doctor`; that runs outside the sandbox, so read what a session changed first.
 
 - `npm test`: unit and API tests (Node's built-in runner).
-- `npm run lint`: syntax check of every script (`lint:js`, `lint:sh`).
-- `npm run test:ui`: browser tests for the page (`ui-tests/`), with Playwright and your installed Google Chrome. Run `npm install` once first.
+- `npm run lint`: syntax check of every script (`npm run lint -- js` or `-- sh` for one kind).
+- `npm run test:ui`: browser tests for the page (`test/ui/`), with Playwright and your installed Google Chrome. Run `npm install` once first.
 
 They need a Node on your PATH; portable's own is at `~/.local/share/portable-node/current/bin`. Bump `version` in `package.json` when a change is worth telling apart.
 
 ### Node
 
-portable runs on its own Node in `~/.local/share/portable-node`. `install.sh` downloads the newest 26.x from [nodejs.org/dist/latest-v26.x](https://nodejs.org/dist/latest-v26.x/). It isn't put on your PATH, so any other Node stays as it is. Run `install.sh` again for patch updates. `NODE_MAJOR` at the top of `install.sh` changes the line.
+portable runs on its own Node in `~/.local/share/portable-node`. `install.sh` downloads the newest 26.x from [nodejs.org/dist/latest-v26.x](https://nodejs.org/dist/latest-v26.x/). It isn't put on your PATH, so any other Node stays as it is. Run `install.sh` again for patch updates. `engines.node` in `package.json` sets the line, for `install.sh` and `portable doctor` both.
 
 ## Removing it
 

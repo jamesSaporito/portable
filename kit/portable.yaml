@@ -63,7 +63,7 @@ capabilities:
           - api.contentrecs.docs.aws.com
 
   # GitHub token from the host's Keychain (macOS), held by sbx and put on requests by the proxy; the sandbox
-  # only sees a placeholder in GH_TOKEN. install.sh registers the source:
+  # only sees a placeholder in GH_TOKEN. `portable configure` registers the source (lib/secrets.mjs):
   #   sbx secret set github --command 'security find-generic-password -s portable -a GH_TOKEN -w'
   # Optional, so a sandbox still starts without a token (then GitHub needs none, or fails).
   # One entry per phase: every inject domain must be in that phase's allow list, and the install

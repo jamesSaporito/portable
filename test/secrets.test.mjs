@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { configure } from '../lib/configure.mjs';
+import { configure, secretStatus } from '../lib/secrets.mjs';
 
 // A fake secret store: `stored` names, what set() returns, and a log of calls.
 function setup({ stored = [], registered = [], setCode = 0, answers = [], sandboxes = [] } = {}) {
@@ -45,7 +45,7 @@ test('configure registers a stored secret sbx isn\'t reading, without asking', a
   assert.deepEqual(questions, []);
 });
 
-test('configure offers to replace stored secrets and names sandboxes to recreate', async () => {
+test('configure offers to replace stored secrets, which existing sandboxes pick up', async () => {
   const { run, calls, questions, lines } = setup({
     stored: ['GH_TOKEN'],
     registered: ['github', 'anthropic'],
@@ -55,8 +55,22 @@ test('configure offers to replace stored secrets and names sandboxes to recreate
   assert.equal(await run(), 0);
   assert.deepEqual(questions, ['Replace it?']);
   assert.deepEqual(calls, [['set', 'GH_TOKEN']]);
-  assert.ok(lines.some((l) => l.includes('portable rm app, portable rm api')));
+  assert.ok(lines.some((l) => l.startsWith('Existing sandboxes use the new value')));
+  assert.ok(!lines.some((l) => l.includes('portable rm')));
   assert.ok(lines.includes('Claude: signed in.'));
+});
+
+test('configure names the sandboxes to recreate for a secret sbx reads for the first time', async () => {
+  const { run, lines } = setup({ answers: [true], sandboxes: ['app', 'api'] });
+  assert.equal(await run(), 0);
+  assert.ok(lines.some((l) => l.includes('portable rm app, portable rm api')));
+});
+
+test('secretStatus says which secrets are stored and read by sbx, and whether Claude is signed in', async () => {
+  const secrets = { async has(name) { return name === 'GH_TOKEN'; } };
+  const status = await secretStatus(secrets, { async secrets() { return [{ name: 'anthropic' }]; } });
+  assert.deepEqual(status.secrets.map(({ name, stored, registered }) => ({ name, stored, registered })), [{ name: 'GH_TOKEN', stored: true, registered: false }]);
+  assert.equal(status.claudeSignedIn, true);
 });
 
 test('configure reports a store that failed and still succeeds', async () => {

@@ -3,24 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { DEFAULTS, loadEnv, saveEnv } from '../lib/config.mjs';
+import { loadEnv, saveEnv } from '../lib/config.mjs';
 import { createApi, findComposeFiles, parseClaudeInfo, parseContainers } from '../lib/api.mjs';
-import { fakeSbx, tempHome } from './support/helpers.mjs';
+import { serveApi, tempHome } from './support/helpers.mjs';
 
 const TOKEN = 'secret-token';
 
 async function startApi(t) {
-  const { home, paths } = tempHome(t);
-  const folder = path.join(home, 'ws', 'app');
-  fs.mkdirSync(path.join(folder, 'api'), { recursive: true });
-  fs.writeFileSync(path.join(folder, 'compose.yaml'), 'services: {}\n');
-  fs.writeFileSync(path.join(folder, 'api', 'docker-compose.yml'), 'services: {}\n');
-  saveEnv(paths, { id: 'app', path: folder, sandbox: 'portable-app', overrides: {}, ports: {}, createdWith: { cpus: 4, memory: '8g' } });
-  const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app', status: 'running', ports: [] }], published: { 'portable-app': [] } });
-  const ctx = {
-    paths,
-    global: { ...DEFAULTS, claudeConfigRepo: 'https://github.com/me/config.git' },
-    sbx,
+  const { home } = tempHome(t);
+  const { server, port, paths, folder, sbx } = await serveApi({
+    home,
+    token: TOKEN,
+    global: { claudeConfigRepo: 'https://github.com/me/config.git' },
     runner: {
       async run(cmd, args) {
         if (cmd === 'aws' && args[1] === 'list-profiles') return { code: 0, stdout: 'default\nTerraform\n', stderr: '' };
@@ -29,21 +23,10 @@ async function startApi(t) {
       },
     },
     secrets: { backend: 'Keychain', async has(name) { return name === 'GH_TOKEN'; } },
-  };
-  const state = {
-    sandbox: { name: 'portable-app', status: 'running' },
-    sbxAnswered: true,
-    forwards: [],
-    blocked: [],
-    events: [],
-    event(m) { this.events.push({ at: new Date().toISOString(), message: m }); },
-    async sync() { return []; },
-    async refreshBlocked() { this.blocked = await sbx.approvals('portable-app'); },
-  };
-  let port;
-  const server = http.createServer(createApi({ ctx, id: 'app', token: TOKEN, getPort: () => port, state }));
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  port = server.address().port;
+  });
+  fs.mkdirSync(path.join(folder, 'api'), { recursive: true });
+  fs.writeFileSync(path.join(folder, 'compose.yaml'), 'services: {}\n');
+  fs.writeFileSync(path.join(folder, 'api', 'docker-compose.yml'), 'services: {}\n');
   t.after(() => server.close());
   const call = (method, url, { body, token = TOKEN, host } = {}) => new Promise((resolve, reject) => {
     const data = body === undefined ? undefined : JSON.stringify(body);
@@ -205,12 +188,11 @@ test('parseContainers reads docker ps JSON lines with compose labels', () => {
 });
 
 test('parseClaudeInfo splits the probe output', () => {
-  const info = parseClaudeInfo('abc123\tAdd a rule\t2 days ago\n---\ncommit\nrun-tests\n---\ngit\n---\nwriting\n');
+  const info = parseClaudeInfo('abc123\tAdd a rule\t2 days ago\n---\ncommit\nrun-tests\n---\ngit\n');
   assert.deepEqual(info.commit, { hash: 'abc123', subject: 'Add a rule', when: '2 days ago' });
   assert.deepEqual(info.skills, ['commit', 'run-tests']);
   assert.deepEqual(info.rules, ['git']);
-  assert.deepEqual(info.disabledInSandbox, ['writing']);
-  assert.equal(parseClaudeInfo('\n---\n\n---\n\n---\n').installed, false);
+  assert.equal(parseClaudeInfo('\n---\n\n---\n').installed, false);
 });
 
 test('POST /api/blocked allows a blocked host for this environment and clears the request', async (t) => {

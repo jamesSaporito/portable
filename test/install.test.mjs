@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tempHome } from './support/helpers.mjs';
+import { SBX_MIN } from '../lib/sbx.mjs';
 
 const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.sh');
 const LINE = 'export PATH="$HOME/.local/bin:$PATH"';
@@ -40,4 +41,17 @@ test('install leaves the PATH alone when a startup file the shell reads already 
 test('install adds the PATH line when the only one is commented out or in another shell\'s file', (t) => {
   assert.equal(added(linkCommand(t, { '.zshrc': `# ${LINE}` })), 1);
   assert.equal(added(linkCommand(t, { '.bashrc': LINE })), 1);
+});
+
+test('install.sh reads the sbx and Node versions from lib/sbx.mjs and package.json', () => {
+  const root = path.dirname(INSTALL);
+  const lines = fs.readFileSync(INSTALL, 'utf8').split('\n').filter((l) => /^(SBX_MIN|NODE_MAJOR)=/.test(l)).join('\n');
+  const printed = execFileSync('bash', ['-c', `PORTABLE_ROOT="$1"\n${lines}\necho "$SBX_MIN $NODE_MAJOR"`, 'install', root], { encoding: 'utf8' }).trim();
+  const engines = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).engines.node.match(/\d+/)[0];
+  assert.equal(printed, `${SBX_MIN} ${engines}`);
+});
+
+test('uninstall.sh looks for the PATH marker install.sh writes', () => {
+  const marker = fs.readFileSync(path.join(path.dirname(INSTALL), 'uninstall.sh'), 'utf8').match(/^marker="(.*)"$/m)[1];
+  assert.ok(fs.readFileSync(INSTALL, 'utf8').includes(`\\n${marker}\\n`));
 });

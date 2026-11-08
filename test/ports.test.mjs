@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEnv, saveEnv } from '../lib/config.mjs';
+import { loadEnv } from '../lib/config.mjs';
 import { candidates, parseLsof, reopenForwards, syncPorts, takenPorts } from '../lib/ports.mjs';
-import { fakeRunner, fakeSbx, tempHome } from './support/helpers.mjs';
+import { fakeRunner, fakeSbx, saveAppEnv, tempHome } from './support/helpers.mjs';
 
 const LSOF = `COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
 postgres  101 me     7u  IPv4 0x1      0t0  TCP 127.0.0.1:5432 (LISTEN)
@@ -34,11 +34,7 @@ test('candidates try the sticky port, then the same number, then the next free o
   assert.deepEqual([...candidates(3000, 3001, taken)].slice(0, 2), [3000, 3002]);
 });
 
-function env(paths, extra = {}) {
-  const e = { id: 'app', path: '/w/app', sandbox: 'portable-app', overrides: {}, ports: {}, ...extra };
-  saveEnv(paths, e);
-  return loadEnv(paths, 'app');
-}
+const env = saveAppEnv;
 
 test('syncPorts forwards new ports at the same number and remembers them', async (t) => {
   const { paths } = tempHome(t);
