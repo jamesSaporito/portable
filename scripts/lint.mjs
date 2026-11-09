@@ -14,7 +14,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const CHECKS = {
   js: {
     command: ['node', '--check'],
-    files: ['bin/*.mjs', 'lib/*.mjs', 'lib/ui/*.js', 'lib/ui/*.mjs', 'scripts/*.mjs', 'ui-tests/*.mjs', '*.config.mjs'],
+    files: ['bin/*.mjs', 'lib/*.mjs', 'lib/ui/*.js', 'lib/ui/*.mjs', 'scripts/*.mjs', 'test/*.mjs', 'test/support/*.mjs', 'test/ui/*.mjs', '*.config.mjs'],
   },
   sh: {
     command: ['sh', '-n'],
@@ -22,7 +22,7 @@ const CHECKS = {
   },
   bash: {
     command: ['bash', '-n'],
-    files: ['install.sh', 'uninstall.sh', 'kit/files/portable-setup', 'kit/files/portable-doctor'],
+    files: ['install.sh', 'uninstall.sh', 'kit/files/portable-setup'],
   },
 };
 // `sh` on the command line means both kinds of shell script.

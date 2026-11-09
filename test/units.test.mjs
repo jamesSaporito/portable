@@ -8,8 +8,8 @@ import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { KIT, kitHash, kitOutdated, refreshKit } from '../lib/environment.mjs';
-import { loadEnv, saveEnv } from '../lib/config.mjs';
-import { fakeSbx, tempHome } from './support/helpers.mjs';
+import { loadEnv } from '../lib/config.mjs';
+import { fakeSbx, saveAppEnv, tempHome } from './support/helpers.mjs';
 
 test('parsePublished keeps TCP ports published on all interfaces', () => {
   const text = '0.0.0.0 3000 3000/tcp\n:: 3000 3000/tcp\n127.0.0.1 9229 9229/tcp\n0.0.0.0 5353 5353/udp\n0.0.0.0 80 8080/tcp\n';
@@ -96,10 +96,11 @@ test('parseCommand takes only portable\'s own commands, and --name only before c
   assert.throws(() => parseCommand(['exec']), /usage: portable exec CMD/);
 });
 
-test('claudeArgs asks before acting unless a permission flag is given', () => {
+test('claudeArgs asks before acting, and never offers bypass, unless a permission flag is given', () => {
   assert.deepEqual(claudeArgs([]), ['--permission-mode', 'default']);
   assert.deepEqual(claudeArgs(['--worktree', 'x']), ['--permission-mode', 'default', '--worktree', 'x']);
   assert.deepEqual(claudeArgs(['--permission-mode', 'acceptEdits']), ['--permission-mode', 'acceptEdits']);
+  assert.deepEqual(claudeArgs(['--permission-mode=plan']), ['--permission-mode=plan']);
   assert.deepEqual(claudeArgs(['--dangerously-skip-permissions']), ['--dangerously-skip-permissions']);
 });
 
@@ -207,13 +208,18 @@ test('sbx.addKit runs sbx kit add in the terminal, building in the builder sandb
 
 test('refreshKit recreates the sandbox, restarts what ran before, reopens forwards and records the kit', async (t) => {
   const { paths } = tempHome(t);
-  saveEnv(paths, { id: 'app', path: '/w/app', sandbox: 'portable-app', overrides: {}, ports: { 5432: 5432 } });
+  saveAppEnv(paths, { ports: { 5432: 5432 } });
   const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app', ports: [{ host_port: 5432, sandbox_port: 5432, protocol: 'tcp4' }] }] });
   sbx.exec = async (name, command) => {
     sbx.calls.push(['exec', name, command]);
     return { code: 0, stdout: command[1] === 'ps' ? 'c1\nc2\n' : '', stderr: '' };
   };
-  sbx.addKit = async (name, kit) => { sbx.calls.push(['addKit', name, path.basename(kit)]); return 0; };
+  sbx.addKit = async (name, kit) => {
+    assert.equal(kit, path.join(paths.state, 'kit-refresh'));
+    assert.match(fs.readFileSync(path.join(kit, 'refresh.yaml'), 'utf8'), /^kind: mixin$/m);
+    sbx.calls.push(['addKit', name, path.basename(kit)]);
+    return 0;
+  };
   const ctx = { sbx, paths };
   assert.ok(kitOutdated(loadEnv(paths, 'app')));
 
@@ -230,7 +236,7 @@ test('refreshKit recreates the sandbox, restarts what ran before, reopens forwar
 
 test('refreshKit leaves the recorded kit alone when sbx refuses', async (t) => {
   const { paths } = tempHome(t);
-  saveEnv(paths, { id: 'app', path: '/w/app', sandbox: 'portable-app', overrides: {}, ports: {}, kit: 'old' });
+  saveAppEnv(paths, { kit: 'old' });
   const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app' }] });
   sbx.addKit = async () => 1;
   assert.equal(await refreshKit({ sbx, paths }, loadEnv(paths, 'app')), undefined);

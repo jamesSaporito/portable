@@ -71,7 +71,7 @@ RUN case "$TARGETARCH" in arm64) a=aarch64 ;; amd64) a=x86_64 ;; esac \
 
 # portable's scripts, managed CLAUDE.md and skills. Claude Code loads /etc/claude-code/CLAUDE.md
 # before the user's and it can't be excluded: https://code.claude.com/docs/en/memory
-COPY --chmod=755 files/portable-setup files/portable-doctor /out/usr/local/bin/
+COPY --chmod=755 files/portable-setup /out/usr/local/bin/
 COPY --chmod=644 files/claude-instructions.md /out/etc/claude-code/CLAUDE.md
 COPY files/skills /out/etc/claude-code/.claude/skills
 # COPY --chmod=644 above also gives /out/etc that mode, and a mixin's folders replace the base's
