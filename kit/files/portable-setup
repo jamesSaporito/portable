@@ -35,17 +35,14 @@ disable_file="${PORTABLE_DISABLE_FILE:-/etc/portable/claude-config-disable}"
 # The configuration repo's URL, as set on the environment's page, the same way: once the page has set
 # one (even blank), it wins over the URL the sandbox was created with (PORTABLE_CLAUDE_CONFIG_REPO).
 repo_file="${PORTABLE_REPO_FILE:-/etc/portable/claude-config-repo}"
-# Interactive shells' startup file, where claude_defaults adds the `claude` wrapper.
-bashrc="${PORTABLE_BASHRC:-/etc/bash.bashrc}"
 
 warn() { echo "portable: $*" >&2; }
 
 # Docker's Claude Code workload writes permissions.defaultMode "bypassPermissions" into the agent's
 # settings, so a `claude` typed in a portable shell would start with no prompts. Set it back to
-# "default" (only that value: a mode the user chose stays), and give interactive shells a `claude`
-# that passes --allow-dangerously-skip-permissions, which keeps bypass available as a choice
-# (Shift+Tab) without turning it on, as `portable claude` does from the host. Runs at install and
-# every boot, in case something writes the setting again; both steps are no-ops once done.
+# "default" (only that value: a mode the user chose stays). Without the setting or a flag, bypass
+# isn't offered at all (not even with Shift+Tab); `claude --dangerously-skip-permissions` starts in
+# it on purpose. Runs at install and every boot, in case something writes the setting again.
 claude_defaults() {
   local settings="$state_dir/settings.json" tmp
   if [ -f "$settings" ] && [ ! -L "$settings" ] \
@@ -58,13 +55,6 @@ claude_defaults() {
       warn "couldn't change Claude's default permission mode in $settings"
     fi
     rm -f "$tmp"
-  fi
-  if [ -f "$bashrc" ] && ! grep -qF '# portable: claude wrapper' "$bashrc"; then
-    cat >> "$bashrc" <<'EOF'
-
-# portable: claude wrapper. Claude asks before acting, with bypass mode one Shift+Tab away.
-claude() { command claude --allow-dangerously-skip-permissions "$@"; }
-EOF
   fi
   return 0
 }

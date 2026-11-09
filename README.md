@@ -91,7 +91,7 @@ portable update          # Update portable from GitHub
 portable help            # Every command
 ```
 
-Claude asks before running commands and editing files. That holds for `portable claude` and for `claude` typed in a `portable` shell. Bypass mode is one Shift+Tab away but never on at the start. To start in another mode, pass a flag: `portable claude --permission-mode acceptEdits`, or `portable claude --dangerously-skip-permissions` for no prompts.
+Claude asks before running commands and editing files. That holds for `portable claude` and for `claude` typed in a `portable` shell. Bypass mode is off and isn't in the Shift+Tab cycle. To use another mode, pass it on purpose: `portable claude --permission-mode acceptEdits`, or `portable claude --dangerously-skip-permissions` for no prompts.
 
 ### What Claude can see
 

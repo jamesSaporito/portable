@@ -157,17 +157,11 @@ export async function updatePortable(runner, dir, write = out) {
 // can reach, not what it spends. `sbx run` would start Docker's workload defaults, which include
 // --dangerously-skip-permissions, and flags passed to it are added after those, so bypass would
 // still win (https://docs.docker.com/ai/sandboxes/agents/claude-code/). portable starts Claude
-// with `sbx exec` and exactly these flags instead. --allow-dangerously-skip-permissions keeps bypass
-// mode available (Shift+Tab) without turning it on, as the sandbox's shell does for `claude`.
+// with `sbx exec` and exactly these flags instead. Bypass mode isn't offered (not even with
+// Shift+Tab) unless a flag passed here asks for it, e.g. --dangerously-skip-permissions.
 export function claudeArgs(args) {
-  const skip = args.includes('--dangerously-skip-permissions');
-  const mode = skip || args.some((a) => a === '--permission-mode' || a.startsWith('--permission-mode='));
-  const allow = skip || args.includes('--allow-dangerously-skip-permissions');
-  return [
-    ...(mode ? [] : ['--permission-mode', 'default']),
-    ...(allow ? [] : ['--allow-dangerously-skip-permissions']),
-    ...args,
-  ];
+  const chosen = args.some((a) => a === '--permission-mode' || a.startsWith('--permission-mode=') || a === '--dangerously-skip-permissions');
+  return chosen ? args : ['--permission-mode', 'default', ...args];
 }
 
 async function runIn(ctx, name, command) {

@@ -96,13 +96,11 @@ test('parseCommand takes only portable\'s own commands, and --name only before c
   assert.throws(() => parseCommand(['exec']), /usage: portable exec CMD/);
 });
 
-test('claudeArgs asks before acting unless a permission flag is given, with bypass available', () => {
-  const allow = '--allow-dangerously-skip-permissions';
-  assert.deepEqual(claudeArgs([]), ['--permission-mode', 'default', allow]);
-  assert.deepEqual(claudeArgs(['--worktree', 'x']), ['--permission-mode', 'default', allow, '--worktree', 'x']);
-  assert.deepEqual(claudeArgs(['--permission-mode', 'acceptEdits']), [allow, '--permission-mode', 'acceptEdits']);
-  assert.deepEqual(claudeArgs(['--permission-mode=plan']), [allow, '--permission-mode=plan']);
-  assert.deepEqual(claudeArgs([allow]), ['--permission-mode', 'default', allow]);
+test('claudeArgs asks before acting, and never offers bypass, unless a permission flag is given', () => {
+  assert.deepEqual(claudeArgs([]), ['--permission-mode', 'default']);
+  assert.deepEqual(claudeArgs(['--worktree', 'x']), ['--permission-mode', 'default', '--worktree', 'x']);
+  assert.deepEqual(claudeArgs(['--permission-mode', 'acceptEdits']), ['--permission-mode', 'acceptEdits']);
+  assert.deepEqual(claudeArgs(['--permission-mode=plan']), ['--permission-mode=plan']);
   assert.deepEqual(claudeArgs(['--dangerously-skip-permissions']), ['--dangerously-skip-permissions']);
 });
 
