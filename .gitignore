@@ -3,3 +3,5 @@ node_modules/
 # Playwright output (npm run test:ui)
 test-results/
 playwright-report/
+# Claude Code worktrees
+.claude/worktrees/

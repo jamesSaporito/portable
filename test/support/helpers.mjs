@@ -1,13 +1,23 @@
-// Shared test helpers: a throwaway portable home and a fake sbx.
+// Shared test helpers: a throwaway portable home, the `app` environment, a fake sbx and runner,
+// and the environment page's API served against them.
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { portablePaths } from '../../lib/paths.mjs';
+import { DEFAULTS, loadEnv, saveEnv } from '../../lib/config.mjs';
+import { createApi } from '../../lib/api.mjs';
 
 export function tempHome(t) {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'portable-test-')));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return { home, paths: portablePaths({ HOME: home }) };
+}
+
+// Saves the environment most tests use, `app` in /w/app, with `extra` on top, and loads it back.
+export function saveAppEnv(paths, extra = {}) {
+  saveEnv(paths, { id: 'app', path: '/w/app', sandbox: 'portable-app', overrides: {}, ports: {}, ...extra });
+  return loadEnv(paths, 'app');
 }
 
 // A fake sbx: `sandboxes` is what `sbx ls` returns; publish/unpublish edit their ports, and
@@ -73,4 +83,39 @@ export function fakeRunner(answers = {}) {
     },
     async runInteractive() { return 0; },
   };
+}
+
+// Serves the real page and API for the `app` environment (folder <home>/ws/app) against a fake sbx,
+// on a free port. `global` goes over the default settings; `groups` is what `sbx policy ls` gives
+// the Network grid and `blocked` the requests sbx refused. The caller closes `server`.
+export async function serveApi({ home, token, global = {}, runner, secrets, groups, blocked = [] }) {
+  const paths = portablePaths({ HOME: home });
+  const folder = path.join(home, 'ws', 'app');
+  fs.mkdirSync(folder, { recursive: true });
+  saveAppEnv(paths, { path: folder, createdWith: { cpus: 4, memory: '8g' } });
+  const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app', status: 'running', ports: [] }], published: { 'portable-app': [] } });
+  if (groups) sbx.networkPolicy = async () => groups;
+  sbx.approvalsList = blocked.map((b) => ({ ...b, sandbox: 'portable-app' }));
+  const ctx = {
+    paths,
+    global: { ...DEFAULTS, ...global },
+    sbx,
+    runner: runner ?? { async run() { return { code: 0, stdout: '', stderr: '' }; } },
+    secrets: secrets ?? { backend: 'Keychain', async has() { return false; } },
+  };
+  const state = {
+    sandbox: { name: 'portable-app', status: 'running' },
+    sbxAnswered: true,
+    forwards: [],
+    blocked: await sbx.approvals('portable-app'),
+    events: [],
+    event(message) { this.events.push({ at: new Date().toISOString(), message }); },
+    async sync() { return []; },
+    async refreshBlocked() { this.blocked = await sbx.approvals('portable-app'); },
+  };
+  let port;
+  const server = http.createServer(createApi({ ctx, id: 'app', token, getPort: () => port, state }));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = server.address().port;
+  return { server, port, paths, folder, sbx };
 }

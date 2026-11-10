@@ -5,15 +5,14 @@ import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { loadEnv, listEnvs, saveEnv, updateEnv } from '../lib/config.mjs';
 import {
-  ROOT, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, applyOffline, createContext, createSandbox, ensureAgent,
+  ROOT, agentDir, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, applyOffline, createContext, createSandbox, ensureAgent,
   kitOutdated, readAgent, refreshAws, refreshKit, settingsFor, stopAgent,
 } from '../lib/environment.mjs';
-import { PREFIX, UserError, envByName, resolveEnv, sessionFolder, workspaceFolder } from '../lib/env.mjs';
+import { PREFIX, UserError, envByName, out, resolveEnv, say, sessionFolder, workspaceFolder } from '../lib/env.mjs';
 import { portsTable, syncPorts } from '../lib/ports.mjs';
 import { tcpForwards } from '../lib/sbx.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
-import { configure } from '../lib/configure.mjs';
-import { updatePortable } from '../lib/update.mjs';
+import { configure } from '../lib/secrets.mjs';
 
 const USAGE = `Works with the sandbox for the current folder; --name NAME picks a separate, named one.
   portable [--name NAME]               -> bash in the folder's sandbox
@@ -32,9 +31,6 @@ const USAGE = `Works with the sandbox for the current folder; --name NAME picks 
   portable secret set|rm NAME          -> store or remove one secret (GH_TOKEN)
   portable doctor --no-sandbox         -> the checks on this computer only`;
 
-const say = (message) => process.stderr.write(`portable: ${message}\n`);
-const out = (text) => process.stdout.write(`${text}\n`);
-
 function usage(text) {
   throw new UserError(`usage: ${text}`);
 }
@@ -46,12 +42,18 @@ function workspace(ctx) {
   return ws;
 }
 
+// sbx's list of sandboxes (all, or with `ours` only portable's); an error when sbx didn't answer.
+async function sandboxesOrThrow(ctx, { ours = false } = {}) {
+  const sandboxes = await (ours ? ctx.sbx.ours() : ctx.sbx.list());
+  if (!sandboxes) throw new UserError("sbx didn't answer (sbx ls failed); is its daemon running? Try: sbx ls");
+  return sandboxes;
+}
+
 // The environment for the current folder (or --name), saved on first use.
 async function currentEnv(ctx, name) {
   const ws = workspace(ctx);
   const folder = sessionFolder(process.cwd(), ws, ctx.folders, ctx.paths.home);
-  const sandboxes = await ctx.sbx.list();
-  if (!sandboxes) throw new UserError("sbx didn't answer (sbx ls failed); is its daemon running? Try: sbx ls");
+  const sandboxes = await sandboxesOrThrow(ctx);
   const env = resolveEnv({ paths: ctx.paths, folder, name, sandboxes });
   if (!loadEnv(ctx.paths, env.id)) saveEnv(ctx.paths, env);
   return { env: loadEnv(ctx.paths, env.id), ws };
@@ -108,7 +110,7 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
 
   const agent = await ensureAgent(ctx, env);
   if (agent) say(`page: ${agent.url} (type /ui in Claude for the link)`);
-  else say(`couldn't start the page; see ${ctx.paths.state}/${env.id}/agent.log`);
+  else say(`couldn't start the page; see ${agentDir(ctx, env.id)}/agent.log`);
   if (agent && openPage && !existing) await ctx.runner.run('open', [agent.url]);
   return env;
 }
@@ -128,11 +130,37 @@ async function showVersion(ctx) {
   out(versionLine(version, commit, dirty));
 }
 
+// `portable update`: moves the installed copy forward to its GitHub branch. Only GitHub's commits
+// reach it, so changes made in a session arrive after they're merged.
+export async function updatePortable(runner, dir, write = out) {
+  if (!fs.existsSync(path.join(dir, '.git'))) {
+    throw new UserError(`no installed copy in ${dir}; run install.sh from a clone of portable`);
+  }
+  const git = (...args) => runner.run('git', ['-C', dir, ...args]);
+  const status = await git('status', '--porcelain');
+  if (status.stdout.trim()) {
+    throw new UserError(`${dir} has local changes; make changes in a clone of portable and merge them on GitHub instead\n${status.stdout}`);
+  }
+  if ((await git('fetch', '--quiet')).code !== 0) throw new UserError(`couldn't fetch ${dir} from GitHub`);
+  const incoming = (await git('log', '--oneline', 'HEAD..@{u}')).stdout.trim();
+  if (!incoming) {
+    write(`portable is up to date (${(await git('log', '-1', '--format=%h')).stdout.trim()})`);
+    return;
+  }
+  write('Updating portable with:');
+  write(incoming.split('\n').map((l) => `  ${l}`).join('\n'));
+  if ((await git('merge', '--quiet', '--ff-only', '@{u}')).code !== 0) {
+    throw new UserError(`couldn't fast-forward ${dir} (its history differs from GitHub's)`);
+  }
+  write("Updated. If kit/ changed, the next 'portable' in each environment offers to update its sandbox in place, keeping its Docker data. Running pages pick up the change when their sandbox next starts.");
+}
+
 // Claude asks before acting unless a permission flag is passed, since a sandbox limits what Claude
 // can reach, not what it spends. `sbx run` would start Docker's workload defaults, which include
 // --dangerously-skip-permissions, and flags passed to it are added after those, so bypass would
 // still win (https://docs.docker.com/ai/sandboxes/agents/claude-code/). portable starts Claude
-// with `sbx exec` and exactly these flags instead.
+// with `sbx exec` and exactly these flags instead. Bypass mode isn't offered (not even with
+// Shift+Tab) unless a flag passed here asks for it, e.g. --dangerously-skip-permissions.
 export function claudeArgs(args) {
   const chosen = args.some((a) => a === '--permission-mode' || a.startsWith('--permission-mode=') || a === '--dangerously-skip-permissions');
   return chosen ? args : ['--permission-mode', 'default', ...args];
@@ -158,8 +186,8 @@ async function runIn(ctx, name, command) {
 }
 
 async function ps(ctx) {
-  const sandboxes = await ctx.sbx.ours();
-  if (!sandboxes) throw new UserError("sbx didn't answer (sbx ls failed); is its daemon running?");
+  await ctx.sbx.ensure();
+  const sandboxes = await sandboxesOrThrow(ctx, { ours: true });
   const envs = listEnvs(ctx.paths);
   const rows = [['NAME', 'STATUS', 'PORTS (SANDBOX→HOST)', 'PAGE', 'FOLDER']];
   for (const s of sandboxes) {
@@ -208,7 +236,7 @@ async function ports(ctx, name) {
     // The agent does the syncing (one process per sandbox, so two never allocate the same port);
     // start it if it isn't running. Only when it can't start, sync from here.
     const agent = await ensureAgent(ctx, env);
-    if (!agent) say(`couldn't start the page and port forwarder; see ${ctx.paths.state}/${env.id}/agent.log`);
+    if (!agent) say(`couldn't start the page and port forwarder; see ${agentDir(ctx, env.id)}/agent.log`);
     const forwards = (agent && await agentSync(ctx, env.id))
       ?? (await syncPorts({ sbx: ctx.sbx, runner: ctx.runner, paths: ctx.paths, env, log: say }))?.forwards
       ?? [];
@@ -223,7 +251,7 @@ async function ui(ctx, name) {
   const found = await namedOrCurrent(ctx, name);
   const env = await prepare(ctx, found, workspace(ctx));
   const agent = readAgent(ctx, env.id);
-  if (!agent) throw new UserError(`couldn't start the page; see ${ctx.paths.state}/${env.id}/agent.log`);
+  if (!agent) throw new UserError(`couldn't start the page; see ${agentDir(ctx, env.id)}/agent.log`);
   out(agent.url);
   await ctx.runner.run('open', [agent.url]);
 }
@@ -266,8 +294,7 @@ async function stopOrRemove(ctx, command, name) {
 
 async function prune(ctx) {
   await ctx.sbx.ensure();
-  const sandboxes = await ctx.sbx.ours();
-  if (!sandboxes) throw new UserError("sbx didn't answer (sbx ls failed); is its daemon running?");
+  const sandboxes = await sandboxesOrThrow(ctx, { ours: true });
   const stopped = sandboxes.filter((s) => s.status !== 'running');
   if (!stopped.length) return out('No stopped sandboxes.');
   out('Stopped sandboxes (their Docker data and Claude history go with them; workspace files stay):');
@@ -323,7 +350,7 @@ async function main(argv) {
     case 'secret': return secret(ctx, rest[0], rest[1]);
     case 'configure':
       return configure({ secrets: ctx.secrets, sbx: ctx.sbx, ask: confirm, write: out, interactive: Boolean(process.stdin.isTTY) });
-    case 'ps': await ctx.sbx.ensure(); return ps(ctx);
+    case 'ps': return ps(ctx);
     case 'ports': return ports(ctx, rest[0]);
     case 'ui': return ui(ctx, rest[0]);
     case 'stop':

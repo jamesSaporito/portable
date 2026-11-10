@@ -29,7 +29,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 set -- ${args[@]+"${args[@]}"}
-SBX_MIN=0.50.0
+# Oldest sbx portable works with, from lib/sbx.mjs so the two can't drift apart.
+SBX_MIN="$(sed -n "s/^export const SBX_MIN = '\(.*\)';.*/\1/p" "$PORTABLE_ROOT/lib/sbx.mjs")"
 bin_dir="$HOME/.local/bin"
 os="$(uname -s)"
 
@@ -97,11 +98,12 @@ ensure_brew() {
   fi
 }
 
-# portable runs on its own Node, one major line on every computer: the newest 26.x from nodejs.org,
-# checked against its published SHA-256 sums, in ~/.local/share/portable-node. Nothing else uses it,
-# and Node installed some other way is left alone. Re-running install.sh moves it to the newest 26.x.
+# portable runs on its own Node, one major line on every computer (package.json's engines.node,
+# e.g. ">=26" for the newest 26.x) from nodejs.org, checked against its published SHA-256 sums, in
+# ~/.local/share/portable-node. Nothing else uses it, and Node installed some other way is left
+# alone. Re-running install.sh moves it to the newest of the line.
 # Files and sums: https://nodejs.org/dist/latest-v26.x/ (SHASUMS256.txt)
-NODE_MAJOR=26
+NODE_MAJOR="$(sed -n 's/.*"node": *">=\([0-9]*\)".*/\1/p' "$PORTABLE_ROOT/package.json")"
 NODE_DIR="${PORTABLE_NODE_DIR:-$HOME/.local/share/portable-node}"
 NODE="$NODE_DIR/current/bin/node"
 
