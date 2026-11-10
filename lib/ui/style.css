@@ -117,7 +117,8 @@ small { display: block; margin-top: 4px; }
   border-radius: 8px;
 }
 .offline p { margin: 0; }
-.offline.on { border-color: var(--warn); color: var(--warn); }
+#offline-state { color: var(--ok); }
+.offline.on #offline-state { color: var(--warn); }
 
 table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }

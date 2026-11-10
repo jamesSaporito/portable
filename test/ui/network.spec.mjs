@@ -101,11 +101,14 @@ test('extra allowed hosts are saved from the top of Network, not the sandbox set
 
 test('Go offline denies every host but Claude\'s, and Go back online removes the denies', async () => {
   const toggle = page.locator('#offline-toggle');
+  const state = page.locator('#offline-state');
   await expect(toggle).toHaveText('Go offline');
+  await expect(state).toHaveText('Online');
   await toggle.click();
   await expect(page.locator('#banner')).toHaveText("Offline: only Claude's hosts are reachable.");
   await expect(toggle).toHaveText('Go back online');
   await expect(page.locator('#offline')).toHaveClass(/\bon\b/);
+  await expect(state).toHaveText('Offline');
   const denied = () => server.sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.resources[0]).sort();
   expect(denied()).toEqual(['**.amazonaws.com', '**.googleapis.com', '*.amazonaws.com', 'mcp.atlassian.com']);
 
@@ -113,7 +116,25 @@ test('Go offline denies every host but Claude\'s, and Go back online removes the
   await expect(page.locator('#banner')).toHaveText('Back online.');
   await expect(toggle).toHaveText('Go offline');
   await expect(page.locator('#offline')).not.toHaveClass(/\bon\b/);
+  await expect(state).toHaveText('Online');
   expect(denied()).toEqual([]);
+});
+
+test('an agent older than offline mode leaves the toggle off and disabled, refresh after refresh', async () => {
+  // Such an agent's status has no offline field.
+  await page.route('**/api/status', async (route) => {
+    const body = await (await route.fetch()).json();
+    delete body.offline;
+    await route.fulfill({ json: body });
+  });
+  await page.reload();
+  const toggle = page.locator('#offline-toggle');
+  for (let i = 0; i < 2; i++) {
+    if (i) await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 5500)));
+    await expect(page.locator('#offline-state')).toHaveText('Unknown');
+    await expect(toggle).toBeDisabled();
+    await expect(page.locator('#offline')).not.toHaveClass(/\bon\b/);
+  }
 });
 
 test('the page fits a phone screen without scrolling sideways', async () => {
