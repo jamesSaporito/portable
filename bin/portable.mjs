@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { loadEnv, listEnvs, saveEnv, updateEnv } from '../lib/config.mjs';
 import {
-  ROOT, agentDir, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, createContext, createSandbox, ensureAgent,
+  ROOT, agentDir, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, applyOffline, createContext, createSandbox, ensureAgent,
   kitOutdated, readAgent, refreshAws, refreshKit, settingsFor, stopAgent,
 } from '../lib/environment.mjs';
 import { PREFIX, UserError, envByName, out, resolveEnv, say, sessionFolder, workspaceFolder } from '../lib/env.mjs';
@@ -85,6 +85,8 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
   }
 
   problems.push(...await applyDomains(ctx, env, settings));
+  // An environment its page took offline stays offline, hosts added since included.
+  problems.push(...await applyOffline(ctx, env));
   // AWS only when this environment turned it on; an expired session is reported, not signed in
   // here (the page's Sign in button does that, as does `aws sso login`).
   problems.push(...await refreshAws(ctx, env, settings));

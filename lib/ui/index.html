@@ -53,6 +53,10 @@
         <button type="button" data-action="network">Refresh</button>
       </div>
       <p class="muted">Every host the sandbox can reach, and the ones it tried that the policy refused. Blocked hosts come first; allow one to add it to this environment's allowed hosts. A rule covers only its port (443 is HTTPS, so <code>http://</code> to the same host is refused); <code>**.</code> covers the domain and every subdomain, <code>*.</code> one level of subdomain. Type a host, URL or <code>host:port</code> in Search to see whether it would be allowed. Read from <code>sbx policy ls</code>.</p>
+      <div class="offline" id="offline">
+        <p id="offline-text">Go offline to block every host but Claude's for this sandbox, so agents can only work with what's already in it. It stays offline until you come back here.</p>
+        <button type="button" data-action="offline" id="offline-toggle">Go offline</button>
+      </div>
       <form id="hosts-form">
           <label>
             <span>Extra allowed hosts</span>

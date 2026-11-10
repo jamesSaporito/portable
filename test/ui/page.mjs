@@ -10,6 +10,8 @@ const TOKEN = 'ui-test-token';
 export async function startPage({ groups = [], blocked = [] } = {}) {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'portable-ui-test-')));
   const { server, port, sbx } = await serveApi({ home, token: TOKEN, groups, blocked });
+  // The raw rules offline mode reads: allow every host in `groups` (they're all sbx defaults here).
+  sbx.rules = groups.map((g) => ({ decision: 'allow', resources: g.hosts, provenance: { created_via: 'default' } }));
   const added = [];
   sbx.sandboxDomains = async () => [...added];
   sbx.allowDomain = async (name, host) => { added.push(host); return true; };
@@ -17,6 +19,7 @@ export async function startPage({ groups = [], blocked = [] } = {}) {
   return {
     url: `http://127.0.0.1:${port}/?t=${TOKEN}`,
     added,
+    sbx,
     async close() {
       // The page polls with keep-alive connections and is still open here, so drop them;
       // close() alone waits for them and hangs the test now and then.

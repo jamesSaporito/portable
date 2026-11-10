@@ -53,6 +53,20 @@ export function fakeSbx({ sandboxes = [], published = {}, refuse = [] } = {}) {
     },
     async secrets() { return [{ name: 'github', scope: 'global', stored: true }]; },
     async networkPolicy() { return [{ source: 'kit', name: 'kit', hosts: ['github.com'] }]; },
+    // Raw `sbx policy ls` rules; denyDomain and removeRule edit them.
+    rules: [],
+    async policyRules() { return this.rules; },
+    async denyDomain(name, host) {
+      calls.push(['deny', name, host]);
+      this.rules.push({ id: `deny-${host}`, decision: 'deny', sandbox_id: name, resources: [host], provenance: { created_via: 'added' } });
+      return true;
+    },
+    async removeRule(name, id) {
+      calls.push(['removeRule', name, id]);
+      this.rules = this.rules.filter((r) => r.id !== id);
+      return true;
+    },
+    async sandboxDomains() { return []; },
     approvalsList: [],
     async approvals(name) { return this.approvalsList.filter((a) => a.sandbox === name); },
     async respond(id, option) { calls.push(['respond', id, option]); this.approvalsList = this.approvalsList.filter((a) => a.id !== id); return true; },
