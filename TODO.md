@@ -3,6 +3,7 @@
 ## Before pushing
 
 ## Later
+- Offline mode (branch `offline-mode`, 2026-11-10): only unit, API and browser tests ran, against a fake sbx. On a real sandbox, click Go offline and check `sbx policy ls <sandbox> --wide` shows deny rules (wildcards like `**.amazonaws.com` accepted, `decision: "deny"` as assumed), that `portable exec curl -sS -m 5 https://github.com` is refused while `portable claude -p "say hi"` still answers (if not, Claude needs a host outside anthropic.com/claude.ai/claude.com), then Go back online and check the denies are gone and github.com connects
 - Node rebuild (branch `node-rebuild`): run `portable doctor` end to end once the GitHub token works again (the smoke run on 2026-11-03 got "Invalid username or token" when cloning claude-configuration, so it may have expired)
 - Node rebuild: try two `--worktree` agents in one sandbox whose stacks both want 3000, and `/start` + `/stop` on Portfolio2, opening the reported host URLs in the browser and TablePlus (needs a real project)
 - Node rebuild: install.sh's checksum-mismatch path for the Node download wasn't run (only the download, the no-op rerun and the no-terminal refusal were); fake a bad sum once with a terminal

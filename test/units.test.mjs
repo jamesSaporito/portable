@@ -1,7 +1,7 @@
 // Small parsers and helpers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addedDomains, allowedHosts, blockedHosts, createSbx, parsePublished, tcpForwards, versionAtLeast } from '../lib/sbx.mjs';
+import { addedDomains, allowedHosts, blockedHosts, createSbx, deniedRules, offlineTargets, parsePublished, tcpForwards, versionAtLeast } from '../lib/sbx.mjs';
 import { parseExport } from '../lib/aws.mjs';
 import { covers, parseRequest } from '../lib/ui/hosts.mjs';
 import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
@@ -132,6 +132,44 @@ test('allowedHosts groups every allow rule for the sandbox by where it came from
     { source: 'global', name: 'global', hosts: ['old.example.com'] },
   ]);
   assert.deepEqual(allowedHosts(undefined, 'x'), []);
+});
+
+test('offlineTargets denies every allowed host but Claude\'s, without ports', () => {
+  const rules = [
+    { name: 'default-ai-services', decision: 'allow', resources: ['api.anthropic.com:443', '**.openai.com:443', '**.claude.ai:443'], provenance: { created_via: 'default' } },
+    { name: 'kit:portable-app', decision: 'allow', resources: ['github.com:443', 'github.com', 'platform.claude.com', 'mcp.atlassian.com'], sandbox_id: 'portable-app', provenance: { created_via: 'provisioned' } },
+    { decision: 'allow', resources: ['pypi.org'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+    { decision: 'allow', resources: ['x.org'], sandbox_id: 'other', provenance: { created_via: 'added' } },
+    { decision: 'allow', resources: ['notanthropic.com'], provenance: { created_via: 'added' } },
+    { name: 'default-deny-all', decision: 'deny', resources: ['**'] },
+  ];
+  assert.deepEqual(offlineTargets(rules, 'portable-app'), {
+    open: false,
+    targets: ['**.openai.com', 'github.com', 'mcp.atlassian.com', 'notanthropic.com', 'pypi.org'],
+  });
+  const open = [{ decision: 'allow', resources: ['**'], provenance: { created_via: 'default' } }];
+  assert.equal(offlineTargets(open, 'portable-app').open, true);
+});
+
+test('deniedRules keeps the deny rules added for this sandbox alone', () => {
+  const rules = [
+    { id: 'a', decision: 'deny', resources: ['github.com'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+    { id: 'b', decision: 'allow', resources: ['pypi.org'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+    { id: 'c', decision: 'deny', resources: ['x.org'], sandbox_id: 'other', provenance: { created_via: 'added' } },
+    { id: 'd', name: 'default-deny-all', decision: 'deny', resources: ['**'] },
+  ];
+  assert.deepEqual(deniedRules(rules, 'portable-app'), [{ id: 'a', host: 'github.com' }]);
+});
+
+test('sbx.denyDomain and removeRule scope the rule to the sandbox', async () => {
+  const calls = [];
+  const sbx = createSbx({ async run(cmd, args) { calls.push([cmd, ...args].join(' ')); return { code: 0, stdout: '', stderr: '' }; } });
+  assert.equal(await sbx.denyDomain('portable-app', '**.amazonaws.com'), true);
+  assert.equal(await sbx.removeRule('portable-app', 'rule-1'), true);
+  assert.deepEqual(calls, [
+    'sbx policy deny network --sandbox portable-app **.amazonaws.com',
+    'sbx policy rm network --force --sandbox portable-app --id rule-1',
+  ]);
 });
 
 test('covers matches hosts and ports the way sbx did (0.51.0)', () => {

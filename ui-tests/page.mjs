@@ -20,6 +20,8 @@ export async function startPage({ groups = [], blocked = [] } = {}) {
 
   const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app', status: 'running', ports: [] }], published: { 'portable-app': [] } });
   sbx.networkPolicy = async () => groups;
+  // The raw rules offline mode reads: allow every host in `groups` (they're all sbx defaults here).
+  sbx.rules = groups.map((g) => ({ decision: 'allow', resources: g.hosts, provenance: { created_via: 'default' } }));
   sbx.approvalsList = blocked.map((b) => ({ ...b, sandbox: 'portable-app' }));
   const added = [];
   sbx.sandboxDomains = async () => [...added];
@@ -50,6 +52,7 @@ export async function startPage({ groups = [], blocked = [] } = {}) {
   return {
     url: `http://127.0.0.1:${port}/?t=${TOKEN}`,
     added,
+    sbx,
     async close() {
       // The page polls with keep-alive connections and is still open here, so drop them;
       // close() alone waits for them and hangs the test now and then.

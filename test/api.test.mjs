@@ -249,3 +249,46 @@ test('PUT /api/claude/repo reports a sandbox that can\'t switch, and keeps the s
   assert.equal(JSON.parse(fs.readFileSync(paths.configFile, 'utf8')).claudeConfigRepo, '');
   assert.equal(loadEnv(paths, 'app').appliedRepo, undefined);
 });
+
+test('PUT /api/offline denies every host but Claude\'s, keeps up with new ones, and undoes only its own denies', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.rules = [
+    { decision: 'allow', resources: ['api.anthropic.com:443', 'github.com:443'], provenance: { created_via: 'default' } },
+    { decision: 'allow', resources: ['pypi.org'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+    { id: 'mine', decision: 'deny', resources: ['evil.example'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+  ];
+  assert.equal((await call('PUT', '/api/offline', { body: { offline: 'yes' } })).status, 400);
+  const on = await call('PUT', '/api/offline', { body: { offline: true } });
+  assert.deepEqual(on.body, { offline: true, problems: [] });
+  assert.deepEqual(sbx.calls.filter((c) => c[0] === 'deny').map((c) => c[2]), ['github.com', 'pypi.org']);
+  assert.deepEqual(loadEnv(paths, 'app').offline, { denied: ['github.com', 'pypi.org'] });
+  assert.equal((await call('GET', '/api/status')).body.offline, true);
+
+  // A host allowed while offline is denied at once; nothing is denied twice.
+  sbx.sandboxDomains = async () => ['pypi.org'];
+  sbx.allowDomain = async (name, host) => {
+    sbx.rules.push({ decision: 'allow', resources: [host], sandbox_id: name, provenance: { created_via: 'added' } });
+    return true;
+  };
+  const saved = await call('PUT', '/api/settings', { body: { overrides: { allowDomains: ['pypi.org', 'example.com'] } } });
+  assert.deepEqual(saved.body, { problems: [] });
+  assert.deepEqual(sbx.calls.filter((c) => c[0] === 'deny').map((c) => c[2]), ['github.com', 'pypi.org', 'example.com']);
+
+  sbx.sandboxDomains = async () => ['pypi.org', 'example.com'];
+  const off = await call('PUT', '/api/offline', { body: { offline: false } });
+  assert.deepEqual(off.body, { offline: false, problems: [] });
+  assert.deepEqual(sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.id), ['mine']);
+  assert.equal(sbx.rules.filter((r) => r.decision === 'allow').length, 3);
+  assert.equal(loadEnv(paths, 'app').offline, undefined);
+  assert.equal((await call('GET', '/api/status')).body.offline, false);
+});
+
+test('PUT /api/offline refuses when a rule allows every host', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.rules = [{ decision: 'allow', resources: ['**'], provenance: { created_via: 'default' } }];
+  const result = await call('PUT', '/api/offline', { body: { offline: true } });
+  assert.equal(result.body.offline, false);
+  assert.match(result.body.problems[0], /Open preset/);
+  assert.equal(loadEnv(paths, 'app').offline, undefined);
+  assert.deepEqual(sbx.calls.filter((c) => c[0] === 'deny'), []);
+});

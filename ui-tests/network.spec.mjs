@@ -99,6 +99,23 @@ test('extra allowed hosts are saved from the top of Network, not the sandbox set
   await expect(page.locator('#hosts-form button[type=submit]')).toHaveText('Save');
 });
 
+test('Go offline denies every host but Claude\'s, and Go back online removes the denies', async () => {
+  const toggle = page.locator('#offline-toggle');
+  await expect(toggle).toHaveText('Go offline');
+  await toggle.click();
+  await expect(page.locator('#banner')).toHaveText("Offline: only Claude's hosts are reachable.");
+  await expect(toggle).toHaveText('Go back online');
+  await expect(page.locator('#offline')).toHaveClass(/\bon\b/);
+  const denied = () => server.sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.resources[0]).sort();
+  expect(denied()).toEqual(['**.amazonaws.com', '**.googleapis.com', '*.amazonaws.com', 'mcp.atlassian.com']);
+
+  await toggle.click();
+  await expect(page.locator('#banner')).toHaveText('Back online.');
+  await expect(toggle).toHaveText('Go offline');
+  await expect(page.locator('#offline')).not.toHaveClass(/\bon\b/);
+  expect(denied()).toEqual([]);
+});
+
 test('the page fits a phone screen without scrolling sideways', async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

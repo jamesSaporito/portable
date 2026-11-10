@@ -207,6 +207,8 @@ sbx sends every outbound TCP connection through the Mac and refuses destinations
 
 A rule covers only its port: a host allowed for HTTPS (443) is still refused over `http://`. A blocked host fails with "connection refused" or a TLS error and shows on the page; the sandbox's `CLAUDE.md` tells Claude to report it rather than work around it.
 
+**Offline:** **Go offline** in the page's Network section cuts the sandbox off from everything but Claude, for when all an agent needs is already in it. portable adds a deny rule for this sandbox for every host it may reach (sbx's defaults, the kit, extra hosts), except hosts on `anthropic.com`, `claude.ai` and `claude.com`. A deny wins over every allow ([Docker docs](https://docs.docker.com/ai/governance/local/)). Hosts allowed while it's offline are denied too. It stays offline across `portable` runs and restarts until **Go back online** removes those deny rules. While offline, `git push`, `gh`, npm, image pulls, AWS and MCP servers fail; Claude's API still works. It can't be turned on under sbx's Open preset (an allow rule for every host).
+
 ### Docker
 
 Each sandbox has its own Docker engine. Claude can `docker compose up` a project and run its tests, and bind mounts work unchanged since the folder has the same path.
