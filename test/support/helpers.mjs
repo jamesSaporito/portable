@@ -53,17 +53,29 @@ export function fakeSbx({ sandboxes = [], published = {}, refuse = [] } = {}) {
     },
     async secrets() { return [{ name: 'github', scope: 'global', stored: true }]; },
     async networkPolicy() { return [{ source: 'kit', name: 'kit', hosts: ['github.com'] }]; },
-    // Raw `sbx policy ls` rules; denyDomain and removeRule edit them.
+    // Raw `sbx policy ls` rules; the deny and remove methods edit them the way sbx 0.51.0 does:
+    // a deny next to an allow on the same host in the sandbox's scope is refused, and a batch with
+    // one refused host changes nothing.
     rules: [],
     async policyRules() { return this.rules; },
-    async denyDomain(name, host) {
-      calls.push(['deny', name, host]);
-      this.rules.push({ id: `deny-${host}`, decision: 'deny', sandbox_id: name, resources: [host], provenance: { created_via: 'added' } });
+    async denyDomains(name, hosts) {
+      calls.push(['deny', name, ...hosts]);
+      const scoped = this.rules.filter((r) => r.sandbox_id === name);
+      if (scoped.some((r) => r.decision === 'allow' && hosts.some((h) => r.resources.includes(h)))) return false;
+      for (const host of hosts) {
+        if (scoped.some((r) => r.decision === 'deny' && r.resources.includes(host))) continue;
+        this.rules.push({ id: `deny-${host}`, decision: 'deny', sandbox_id: name, resources: [host], provenance: { created_via: 'added' } });
+      }
       return true;
     },
-    async removeRule(name, id) {
-      calls.push(['removeRule', name, id]);
-      this.rules = this.rules.filter((r) => r.id !== id);
+    async removeDomain(name, host) {
+      return this.removeDomains(name, [host]);
+    },
+    async removeDomains(name, hosts) {
+      calls.push(['rm', name, ...hosts]);
+      const scoped = (h) => this.rules.some((r) => r.sandbox_id === name && r.resources.includes(h));
+      if (!hosts.every(scoped)) return false;
+      this.rules = this.rules.filter((r) => !(r.sandbox_id === name && hosts.some((h) => r.resources.includes(h))));
       return true;
     },
     async sandboxDomains() { return []; },
