@@ -161,14 +161,14 @@ test('deniedRules keeps the deny rules added for this sandbox alone', () => {
   assert.deepEqual(deniedRules(rules, 'portable-app'), [{ id: 'a', host: 'github.com' }]);
 });
 
-test('sbx.denyDomain and removeRule scope the rule to the sandbox', async () => {
+test('sbx.denyDomains and removeDomains scope the rules to the sandbox', async () => {
   const calls = [];
   const sbx = createSbx({ async run(cmd, args) { calls.push([cmd, ...args].join(' ')); return { code: 0, stdout: '', stderr: '' }; } });
-  assert.equal(await sbx.denyDomain('portable-app', '**.amazonaws.com'), true);
-  assert.equal(await sbx.removeRule('portable-app', 'rule-1'), true);
+  assert.equal(await sbx.denyDomains('portable-app', ['**.amazonaws.com', 'github.com']), true);
+  assert.equal(await sbx.removeDomains('portable-app', ['**.amazonaws.com', 'github.com']), true);
   assert.deepEqual(calls, [
-    'sbx policy deny network --sandbox portable-app **.amazonaws.com',
-    'sbx policy rm network --force --sandbox portable-app --id rule-1',
+    'sbx policy deny network --sandbox portable-app **.amazonaws.com,github.com',
+    'sbx policy rm network --force --sandbox portable-app --resource **.amazonaws.com,github.com',
   ]);
 });
 

@@ -232,37 +232,86 @@ test('PUT /api/claude/repo reports a sandbox that can\'t switch, and keeps the s
   assert.equal(loadEnv(paths, 'app').appliedRepo, undefined);
 });
 
-test('PUT /api/offline denies every host but Claude\'s, keeps up with new ones, and undoes only its own denies', async (t) => {
+test('PUT /api/offline denies every host but Claude\'s in one call, and undoes only its own denies', async (t) => {
   const { call, paths, sbx } = await startApi(t);
   sbx.rules = [
     { decision: 'allow', resources: ['api.anthropic.com:443', 'github.com:443'], provenance: { created_via: 'default' } },
-    { decision: 'allow', resources: ['pypi.org'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+    { decision: 'allow', resources: ['pypi.org'], editable: true, sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
     { id: 'mine', decision: 'deny', resources: ['evil.example'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
   ];
-  assert.equal((await call('PUT', '/api/offline', { body: { offline: 'yes' } })).status, 400);
-  const on = await call('PUT', '/api/offline', { body: { offline: true } });
-  assert.deepEqual(on.body, { offline: true, problems: [] });
-  assert.deepEqual(sbx.calls.filter((c) => c[0] === 'deny').map((c) => c[2]), ['github.com', 'pypi.org']);
-  assert.deepEqual(loadEnv(paths, 'app').offline, { denied: ['github.com', 'pypi.org'] });
-  assert.equal((await call('GET', '/api/status')).body.offline, true);
-
-  // A host allowed while offline is denied at once; nothing is denied twice.
-  sbx.sandboxDomains = async () => ['pypi.org'];
+  sbx.sandboxDomains = async () => sbx.rules.filter((r) => r.decision === 'allow' && r.sandbox_id).flatMap((r) => r.resources);
   sbx.allowDomain = async (name, host) => {
-    sbx.rules.push({ decision: 'allow', resources: [host], sandbox_id: name, provenance: { created_via: 'added' } });
+    sbx.rules.push({ decision: 'allow', resources: [host], editable: true, sandbox_id: name, provenance: { created_via: 'added' } });
     return true;
   };
+  assert.equal((await call('PUT', '/api/offline', { body: { offline: 'yes' } })).status, 400);
+  // The sandbox's own allow on pypi.org goes first, or sbx would refuse the deny next to it.
+  const on = await call('PUT', '/api/offline', { body: { offline: true } });
+  assert.deepEqual(on.body, { offline: true, problems: [] });
+  assert.deepEqual(sbx.calls.filter((c) => c[0] === 'deny'), [['deny', 'portable-app', 'github.com', 'pypi.org']]);
+  assert.equal(loadEnv(paths, 'app').offline, true);
+  assert.equal((await call('GET', '/api/status')).body.offline, true);
+
+  // Hosts saved while offline wait for going back online; nothing is denied twice.
   const saved = await call('PUT', '/api/settings', { body: { overrides: { allowDomains: ['pypi.org', 'example.com'] } } });
   assert.deepEqual(saved.body, { problems: [] });
-  assert.deepEqual(sbx.calls.filter((c) => c[0] === 'deny').map((c) => c[2]), ['github.com', 'pypi.org', 'example.com']);
+  assert.equal(sbx.calls.filter((c) => c[0] === 'deny').length, 1);
+  assert.deepEqual(await sbx.sandboxDomains(), []);
 
-  sbx.sandboxDomains = async () => ['pypi.org', 'example.com'];
   const off = await call('PUT', '/api/offline', { body: { offline: false } });
   assert.deepEqual(off.body, { offline: false, problems: [] });
   assert.deepEqual(sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.id), ['mine']);
-  assert.equal(sbx.rules.filter((r) => r.decision === 'allow').length, 3);
+  assert.deepEqual((await sbx.sandboxDomains()).sort(), ['example.com', 'pypi.org']);
   assert.equal(loadEnv(paths, 'app').offline, undefined);
   assert.equal((await call('GET', '/api/status')).body.offline, false);
+});
+
+test('going back online removes the denies sbx holds, not a list kept elsewhere', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.rules = [
+    { decision: 'allow', resources: ['github.com:443', 'pypi.org:443'], provenance: { created_via: 'default' } },
+    { id: 'deny-github.com', decision: 'deny', resources: ['github.com'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+    { id: 'deny-pypi.org', decision: 'deny', resources: ['pypi.org'], sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+  ];
+  // An environment saved by the earlier offline mode, with a list of denies that's out of date.
+  saveEnv(paths, { ...loadEnv(paths, 'app'), offline: { denied: ['gone.example'] } });
+  const off = await call('PUT', '/api/offline', { body: { offline: false } });
+  assert.deepEqual(off.body, { offline: false, problems: [] });
+  assert.deepEqual(sbx.rules.filter((r) => r.decision === 'deny'), []);
+});
+
+test('going back online while denies are still being added leaves none behind', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.rules = [
+    { decision: 'allow', resources: ['github.com:443', 'pypi.org:443'], provenance: { created_via: 'default' } },
+  ];
+  const denyDomains = sbx.denyDomains.bind(sbx);
+  sbx.denyDomains = async (name, hosts) => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return denyDomains(name, hosts);
+  };
+  const on = call('PUT', '/api/offline', { body: { offline: true } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const off = call('PUT', '/api/offline', { body: { offline: false } });
+  await Promise.all([on, off]);
+  assert.deepEqual(sbx.rules.filter((r) => r.decision === 'deny'), []);
+  assert.equal(loadEnv(paths, 'app').offline, undefined);
+});
+
+test('going back online stays offline while a deny won\'t come off, and removes the rest', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.rules = [
+    { decision: 'allow', resources: ['github.com:443', 'pypi.org:443'], provenance: { created_via: 'default' } },
+  ];
+  await call('PUT', '/api/offline', { body: { offline: true } });
+  const removeDomains = sbx.removeDomains.bind(sbx);
+  sbx.removeDomains = async (name, hosts) => !hosts.includes('pypi.org') && removeDomains(name, hosts);
+  const off = await call('PUT', '/api/offline', { body: { offline: false } });
+  assert.equal(off.body.offline, true);
+  assert.equal(off.body.problems.length, 1);
+  assert.match(off.body.problems[0], /pypi\.org/);
+  assert.deepEqual(sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.resources[0]), ['pypi.org']);
+  assert.equal(loadEnv(paths, 'app').offline, true);
 });
 
 test('PUT /api/offline refuses when a rule allows every host', async (t) => {
