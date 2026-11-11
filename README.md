@@ -171,6 +171,8 @@ A rule covers one port, so a host allowed for HTTPS is still refused over `http:
 
 **Offline:** **Go offline** in the page's Network section cuts the sandbox off from everything but Claude, for when all an agent needs is already in it. portable adds a deny rule for this sandbox for every host it may reach (sbx's defaults, the kit, extra hosts), except hosts on `anthropic.com`, `claude.ai` and `claude.com`. A deny wins over every allow ([Docker docs](https://docs.docker.com/ai/governance/local/)). Hosts allowed while it's offline are denied too. It stays offline across `portable` runs and restarts until **Go back online** removes those deny rules. While offline, `git push`, `gh`, npm, image pulls, AWS and MCP servers fail; Claude's API still works. It can't be turned on under sbx's Open preset (an allow rule for every host).
 
+**Kept while offline**, under the button, lists hosts that stay reachable while offline, if a rule allows them (put a new host in the extra allowed hosts too). Wildcards work (`**.github.com`). The list is saved for the environment, so it applies every time it goes offline, and changes apply right away while it is; **Remove** drops one host and **Clear all** empties it. Since a deny beats every allow, keeping `github.com` also leaves a wider rule like `**.github.com` undenied, and its subdomains with it.
+
 ### Docker
 
 Each sandbox has its own Docker engine, so Claude can `docker compose up` a project and run its tests. Bind mounts work unchanged since the folder has the same path.

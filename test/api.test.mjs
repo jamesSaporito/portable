@@ -266,6 +266,49 @@ test('PUT /api/offline denies every host but Claude\'s in one call, and undoes o
   assert.equal((await call('GET', '/api/status')).body.offline, false);
 });
 
+test('hosts kept while offline stay reachable, and follow the list while offline', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.rules = [
+    { decision: 'allow', resources: ['**.github.com:443', 'github.com:443', 'registry.npmjs.org:443'], provenance: { created_via: 'default' } },
+    { decision: 'allow', resources: ['pypi.org'], editable: true, sandbox_id: 'portable-app', provenance: { created_via: 'added' } },
+  ];
+  sbx.sandboxDomains = async () => sbx.rules.filter((r) => r.decision === 'allow' && r.sandbox_id).flatMap((r) => r.resources);
+  sbx.allowDomain = async (name, host) => {
+    sbx.rules.push({ decision: 'allow', resources: [host], editable: true, sandbox_id: name, provenance: { created_via: 'added' } });
+    return true;
+  };
+  const denied = () => sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.resources[0]).sort();
+  await call('PUT', '/api/settings', { body: { overrides: { allowDomains: ['pypi.org'], offlineAllow: ['github.com', 'pypi.org'] } } });
+
+  // Kept: github.com, the wider **.github.com that would deny it, and the environment's own pypi.org.
+  const on = await call('PUT', '/api/offline', { body: { offline: true } });
+  assert.deepEqual(on.body, { offline: true, problems: [] });
+  assert.deepEqual(denied(), ['registry.npmjs.org']);
+  assert.deepEqual(await sbx.sandboxDomains(), ['pypi.org']);
+
+  // Keeping one more while offline takes its deny off right away.
+  await call('PUT', '/api/settings', { body: { overrides: { offlineAllow: ['github.com', 'pypi.org', 'registry.npmjs.org'] } } });
+  assert.deepEqual(denied(), []);
+
+  // Removing them denies them again, and the environment's own allow goes first.
+  const cleared = await call('PUT', '/api/settings', { body: { overrides: { offlineAllow: null } } });
+  assert.deepEqual(cleared.body, { problems: [] });
+  assert.deepEqual(denied(), ['**.github.com', 'github.com', 'pypi.org', 'registry.npmjs.org']);
+  assert.deepEqual(await sbx.sandboxDomains(), []);
+  assert.equal(loadEnv(paths, 'app').overrides.offlineAllow, undefined);
+
+  // Kept again while offline, the environment's host gets its allow back.
+  await call('PUT', '/api/settings', { body: { overrides: { offlineAllow: ['pypi.org'] } } });
+  assert.deepEqual(await sbx.sandboxDomains(), ['pypi.org']);
+  assert.deepEqual(denied(), ['**.github.com', 'github.com', 'registry.npmjs.org']);
+
+  // The list stays saved across going back online, for the next time.
+  const off = await call('PUT', '/api/offline', { body: { offline: false } });
+  assert.deepEqual(off.body, { offline: false, problems: [] });
+  assert.deepEqual(denied(), []);
+  assert.deepEqual(loadEnv(paths, 'app').overrides.offlineAllow, ['pypi.org']);
+});
+
 test('going back online removes the denies sbx holds, not a list kept elsewhere', async (t) => {
   const { call, paths, sbx } = await startApi(t);
   sbx.rules = [

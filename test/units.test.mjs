@@ -1,7 +1,7 @@
 // Small parsers and helpers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addedDomains, allowedHosts, blockedHosts, createSbx, deniedRules, offlineTargets, parsePublished, tcpForwards, versionAtLeast } from '../lib/sbx.mjs';
+import { addedDomains, allowedHosts, blockedHosts, createSbx, deniedRules, keptOffline, offlineTargets, parsePublished, tcpForwards, versionAtLeast } from '../lib/sbx.mjs';
 import { parseExport } from '../lib/aws.mjs';
 import { covers, parseRequest } from '../lib/ui/hosts.mjs';
 import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
@@ -149,6 +149,27 @@ test('offlineTargets denies every allowed host but Claude\'s, without ports', ()
   });
   const open = [{ decision: 'allow', resources: ['**'], provenance: { created_via: 'default' } }];
   assert.equal(offlineTargets(open, 'portable-app').open, true);
+});
+
+test('keptOffline spares the rules that cover a host in common with a kept one, ports aside', () => {
+  // A deny on **.github.com would block github.com too, so keeping github.com spares it.
+  assert.equal(keptOffline(['github.com'], '**.github.com'), true);
+  assert.equal(keptOffline(['github.com'], 'github.com:443'), true);
+  // *.github.com covers subdomains only, not github.com itself.
+  assert.equal(keptOffline(['github.com'], '*.github.com'), false);
+  assert.equal(keptOffline(['**.github.com'], 'api.github.com'), true);
+  assert.equal(keptOffline(['**.github.com'], '*.github.com'), true);
+  assert.equal(keptOffline(['*.github.com'], '**.github.com'), true);
+  assert.equal(keptOffline(['*.a.github.com'], '*.github.com'), false);
+  assert.equal(keptOffline(['github.com'], 'notgithub.com'), false);
+  assert.equal(keptOffline([], 'github.com'), false);
+});
+
+test('offlineTargets leaves out the kept hosts', () => {
+  const rules = [
+    { decision: 'allow', resources: ['**.github.com:443', 'github.com', 'pypi.org', 'mcp.atlassian.com'], provenance: { created_via: 'default' } },
+  ];
+  assert.deepEqual(offlineTargets(rules, 'portable-app', ['github.com', '**.atlassian.com']).targets, ['pypi.org']);
 });
 
 test('deniedRules keeps the deny rules added for this sandbox alone', () => {

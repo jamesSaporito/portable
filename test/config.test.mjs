@@ -44,6 +44,14 @@ test('AWS is off unless the environment turned it on; an old global awsProfile i
   assert.equal(fromEnvVars({ PORTABLE_AWS_PROFILE: 'x' }).awsProfile, undefined);
 });
 
+test('the hosts kept while offline are the environment\'s own, empty unless it saved some', () => {
+  assert.deepEqual(effectiveSettings(DEFAULTS, { overrides: {} }).offlineAllow, []);
+  assert.deepEqual(effectiveSettings(DEFAULTS, { overrides: { offlineAllow: ['**.github.com'] } }).offlineAllow, ['**.github.com']);
+  assert.deepEqual(validateOverrides({ offlineAllow: ['github.com', '**.github.com', 'github.com'] }), { offlineAllow: ['github.com', '**.github.com'] });
+  assert.deepEqual(validateOverrides({ offlineAllow: null }), { offlineAllow: null });
+  assert.throws(() => validateOverrides({ offlineAllow: ['$(reboot)'] }), /offlineAllow/);
+});
+
 test('validateOverrides accepts good values and rejects bad ones', () => {
   assert.deepEqual(validateOverrides({ allowDomains: ['pypi.org', '*.example.com', 'pypi.org'], memory: '4G', cpus: 2, awsProfile: null }), {
     allowDomains: ['pypi.org', '*.example.com'],

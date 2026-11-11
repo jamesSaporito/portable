@@ -120,6 +120,40 @@ test('Go offline denies every host but Claude\'s, and Go back online removes the
   expect(denied()).toEqual([]);
 });
 
+test('hosts kept while offline are saved, added and removed one by one or all at once', async () => {
+  const form = page.locator('#offline-keep-form');
+  const kept = page.locator('#offline-keep li code');
+  const clear = page.locator('#offline-keep-clear');
+  const denied = () => server.sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.resources[0]).sort();
+  await expect(clear).toBeDisabled();
+
+  await form.locator('input[name=host]').fill('mcp.atlassian.com **.googleapis.com');
+  await form.locator('button[type=submit]').click();
+  await expect(page.locator('#banner')).toHaveText('Kept while offline: mcp.atlassian.com, **.googleapis.com. It applies the next time this sandbox goes offline.');
+  await expect(kept).toHaveText(['mcp.atlassian.com', '**.googleapis.com']);
+  await expect(form.locator('input[name=host]')).toHaveValue('');
+
+  await page.locator('#offline-toggle').click();
+  await expect(page.locator('#offline-state')).toHaveText('Offline');
+  expect(denied()).toEqual(['**.amazonaws.com', '*.amazonaws.com']);
+
+  // One by one: the removed host is denied right away.
+  await page.getByRole('button', { name: 'Stop keeping mcp.atlassian.com' }).click();
+  await expect(page.locator('#banner')).toHaveText('mcp.atlassian.com is no longer kept while offline.');
+  await expect(kept).toHaveText(['**.googleapis.com']);
+  expect(denied()).toEqual(['**.amazonaws.com', '*.amazonaws.com', 'mcp.atlassian.com']);
+
+  await clear.click();
+  await expect(page.locator('#banner')).toHaveText('No hosts are kept while offline.');
+  await expect(kept).toHaveCount(0);
+  await expect(clear).toBeDisabled();
+  expect(denied()).toEqual(['**.amazonaws.com', '**.googleapis.com', '*.amazonaws.com', 'mcp.atlassian.com']);
+
+  await form.locator('input[name=host]').fill('$(reboot)');
+  await form.locator('button[type=submit]').click();
+  await expect(page.locator('#banner')).toHaveText(/offlineAllow must be host names/);
+});
+
 test('an agent older than offline mode leaves the toggle off and disabled, refresh after refresh', async () => {
   // Such an agent's status has no offline field.
   await page.route('**/api/status', async (route) => {
