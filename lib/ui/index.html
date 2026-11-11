@@ -57,6 +57,18 @@
         <p><strong id="offline-state">Online</strong> <span id="offline-text">Go offline to block every host but Claude's for this sandbox, so agents can only work with what's already in it. It stays offline until you come back here.</span></p>
         <button type="button" data-action="offline" id="offline-toggle">Go offline</button>
       </div>
+      <form id="offline-keep-form">
+        <label>
+          <span>Kept while offline</span>
+          <input name="host" placeholder="github.com or **.github.com">
+          <small class="muted">Hosts that stay reachable while this sandbox is offline, if a rule allows them (a new host goes in Extra allowed hosts too). Saved for this environment, so they're kept every time it goes offline. <code>**.example.com</code> keeps the domain and every subdomain. A deny beats every allow, so keeping <code>github.com</code> also leaves a <code>**.github.com</code> rule undenied, and its subdomains with it.</small>
+        </label>
+        <ul id="offline-keep" class="plain"></ul>
+        <div class="actions">
+          <button type="submit">Keep</button>
+          <button type="button" id="offline-keep-clear">Clear all</button>
+        </div>
+      </form>
       <form id="hosts-form">
           <label>
             <span>Extra allowed hosts</span>
