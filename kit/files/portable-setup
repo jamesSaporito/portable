@@ -356,13 +356,15 @@ check_secrets() {
 check_tools() {
   echo "Tools"
   local tool version
-  for tool in claude git gh aws terraform pnpm docker compose; do
+  for tool in claude git gh aws terraform node npm pnpm docker compose; do
     case "$tool" in
       claude) version="$(claude --version 2>/dev/null)" ;;
       git) version="$(git --version 2>/dev/null)" ;;
       gh) version="$(gh --version 2>/dev/null | head -1)" ;;
       aws) version="$(aws --version 2>/dev/null | cut -d' ' -f1)" ;;
       terraform) version="$(terraform version 2>/dev/null | head -1)" ;;
+      node) version="$(node --version 2>/dev/null)" && version="node $version" ;;
+      npm) version="$(npm --version 2>/dev/null)" && version="npm $version" ;;
       pnpm) version="$(pnpm --version 2>/dev/null)" && version="pnpm $version" ;;
       docker) version="$(docker --version 2>/dev/null)" ;;
       compose) version="$(docker compose version 2>/dev/null)" ;;

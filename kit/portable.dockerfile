@@ -3,8 +3,9 @@
 # so nothing here changes the workload's user, entrypoint or packages.
 #
 # Every download is checked against a SHA-256 recorded here, taken from the publisher's checksum
-# file (Terraform, gh), the GitHub release digests (pnpm) or computed from the download (AWS CLI,
+# file (Node.js, Terraform, gh), the GitHub release digests (pnpm) or computed from the download (AWS CLI,
 # which publishes no checksum file) on 2026-10-30. Bumping a version means updating its checksums.
+#   Node.js:   https://nodejs.org/dist/v26.13.1/SHASUMS256.txt (26.x LTS, 2026-11-10; checked 2026-11-12)
 #   Terraform: https://releases.hashicorp.com/terraform/1.17.0/terraform_1.17.0_SHA256SUMS
 #   gh:        https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_checksums.txt
 #   pnpm:      https://api.github.com/repos/pnpm/pnpm/releases/tags/v12.16.1 (asset digests)
@@ -16,13 +17,15 @@
 FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS build
 
 ARG TARGETARCH
+# Same major line as portable itself (package.json's engines.node).
+ARG NODE_VERSION=26.13.1
 ARG TERRAFORM_VERSION=1.17.0
 ARG GH_VERSION=2.103.3
 ARG PNPM_VERSION=12.16.1
 ARG AWS_CLI_VERSION=2.39.0
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && apt-get install -y --no-install-recommends ca-certificates curl unzip libatomic1 patchelf \
  && rm -rf /var/lib/apt/lists/*
 
 # Downloads a URL to a file and checks its SHA-256 (second argument picks the arm64 or amd64 value).
@@ -35,6 +38,20 @@ curl -fsSLo "$2" "$1"
 echo "$sum  $2" | sha256sum -c -
 EOF
 RUN chmod 755 /usr/local/bin/fetch && mkdir -p /out/usr/local/bin /out/usr/local/lib
+
+# Node.js with npm and npx, kept whole in /usr/local/lib/node (npm resolves its own files from there)
+# and linked into /usr/local/bin. The .tar.gz build, so the build stage doesn't need xz.
+# node needs libatomic.so.1, which the workload's image doesn't have and an overlay can't install as a
+# package, so it ships in node's own lib/ (from Debian's libatomic1) and node's RPATH points there.
+RUN case "$TARGETARCH" in arm64) a=arm64 ;; amd64) a=x64 ;; esac \
+ && fetch "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${a}.tar.gz" /tmp/node.tgz \
+      80a330b35415382878df18d41afbd106ea89bfb3be0087d6608e289a14c5cc7d \
+      518674de2b621728a5e4486f5fb3b7d2900bb3cc4aa97969edaa463db99f9778 \
+ && mkdir -p /out/usr/local/lib/node && tar -xzf /tmp/node.tgz -C /out/usr/local/lib/node --strip-components=1 \
+ && cp -L "$(find /usr/lib -name libatomic.so.1 | head -1)" /out/usr/local/lib/node/lib/ \
+ && patchelf --set-rpath '$ORIGIN/../lib' /out/usr/local/lib/node/bin/node \
+ && for b in node npm npx; do ln -s "/usr/local/lib/node/bin/$b" "/out/usr/local/bin/$b"; done \
+ && rm /tmp/node.tgz
 
 # Terraform
 RUN fetch "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip" /tmp/terraform.zip \

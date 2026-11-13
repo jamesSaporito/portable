@@ -1,6 +1,6 @@
 # portable
 
-Claude Code in a microVM on your Mac. Each project folder gets its own sandbox with Claude Code, git, the GitHub CLI, the AWS CLI, Terraform, pnpm and its own Docker engine. Claude works on the folder you start it in and sees nothing else on the Mac.
+Claude Code in a microVM on your Mac. Each project folder gets its own sandbox with Claude Code, git, the GitHub CLI, the AWS CLI, Terraform, Node.js 26 with npm, pnpm and its own Docker engine. Claude works on the folder you start it in and sees nothing else on the Mac.
 
 portable is a thin layer over [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/). A proxy on the Mac decides which hosts a sandbox may reach and adds your credentials to requests, so tokens never enter the VM. portable adds the tools, your Claude configuration repo, Keychain-backed secrets, AWS SSO credentials, ports that keep their number, a page for each environment, the `/start`, `/stop` and `/ui` skills, and `portable doctor`. A project needs no files added to it.
 

@@ -6,7 +6,7 @@
 schemaVersion: "3"
 kind: mixin
 displayName: portable
-description: Terraform, AWS CLI, gh and pnpm for Claude Code, plus the user's Claude configuration repo
+description: Node.js, Terraform, AWS CLI, gh and pnpm for Claude Code, plus the user's Claude configuration repo
 version: "3.0.0"
 provides: ["portable@3.0.0"]
 licenses: [MIT]
