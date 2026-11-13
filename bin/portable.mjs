@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline/promises';
 import { loadEnv, listEnvs, saveEnv, updateEnv } from '../lib/config.mjs';
 import {
   ROOT, agentDir, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, applyOffline, createContext, createSandbox, ensureAgent,
-  kitOutdated, readAgent, refreshAws, refreshKit, settingsFor, stopAgent,
+  kitOutdated, readAgent, refreshAws, refreshKit, settingsFor, stopAgent, updateClaudeRepo,
 } from '../lib/environment.mjs';
 import { PREFIX, UserError, envByName, out, resolveEnv, say, sessionFolder, workspaceFolder } from '../lib/env.mjs';
 import { portsTable, syncPorts } from '../lib/ports.mjs';
@@ -94,8 +94,14 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
   if (existing && env.appliedRepo !== undefined && env.appliedRepo !== settings.claudeConfigRepo) {
     say(`switching ${env.id} to the configuration repo ${settings.claudeConfigRepo || '(none)'}...`);
     problems.push(...await applyClaudeRepo(ctx, env, settings));
-  } else if (env.appliedRepo === undefined) {
-    env = updateEnv(ctx.paths, env.id, (stored) => { stored.appliedRepo = settings.claudeConfigRepo; });
+  } else {
+    if (env.appliedRepo === undefined) {
+      env = updateEnv(ctx.paths, env.id, (stored) => { stored.appliedRepo = settings.claudeConfigRepo; });
+    }
+    // A sandbox that just booted is updated by its startup hook; one that kept running isn't.
+    if (existing?.status === 'running' && settings.claudeConfigRepo) {
+      problems.push(...await updateClaudeRepo(ctx, env, settings));
+    }
   }
   // The skills and rules to leave off are set at creation; push them again only when they changed.
   const disable = settings.claudeConfigDisable.join(' ');
