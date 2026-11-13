@@ -196,7 +196,7 @@ Each sandbox has its own Docker engine, so Claude can `docker compose up` a proj
 | Setting | What it does | Per environment |
 |---|---|---|
 | `workspaceDir` | Empty, the default, lets `portable` run in any project folder. Set it to `~/Projects` to allow only that folder and the ones inside it | No |
-| `claudeConfigRepo` | Your Claude configuration repo as an HTTPS URL. Cloned into each sandbox and updated at every boot. Also settable on any page | No, one for all |
+| `claudeConfigRepo` | Your Claude configuration repo as an HTTPS URL. Cloned into each sandbox and updated at every boot and each time `portable` opens a session in it. Also settable on any page | No, one for all |
 | `claudeConfigDisable` | Skills or rules to turn off in sandboxes, like `["docker-ports"]` | Yes, as checkboxes |
 | `allowDomains` | Extra hosts sandboxes may reach, like `["pypi.org"]` | Yes, added to these |
 | `awsProfile` | The Mac's AWS profile to use. AWS is off until a page turns it on | Per environment only |

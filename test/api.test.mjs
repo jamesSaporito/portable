@@ -232,6 +232,15 @@ test('PUT /api/claude/repo reports a sandbox that can\'t switch, and keeps the s
   assert.equal(loadEnv(paths, 'app').appliedRepo, undefined);
 });
 
+test('POST /api/claude/update pulls the configuration repo from GitHub, not just relinks it', async (t) => {
+  const { call, sbx } = await startApi(t);
+  const result = await call('POST', '/api/claude/update');
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.problems, []);
+  assert.deepEqual(sbx.calls.at(-1)[2].slice(-2), ['portable-setup', 'update']);
+  assert.ok(sbx.calls.at(-1)[2].includes('PORTABLE_CLAUDE_CONFIG_REPO=https://github.com/me/config.git'));
+});
+
 test('PUT /api/offline denies every host but Claude\'s in one call, and undoes only its own denies', async (t) => {
   const { call, paths, sbx } = await startApi(t);
   sbx.rules = [

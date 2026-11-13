@@ -7,7 +7,7 @@ import { covers, parseRequest } from '../lib/ui/hosts.mjs';
 import { claudeArgs, parseCommand, versionLine } from '../bin/portable.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
-import { KIT, kitHash, kitOutdated, refreshKit } from '../lib/environment.mjs';
+import { KIT, kitHash, kitOutdated, refreshKit, updateClaudeRepo } from '../lib/environment.mjs';
 import { loadEnv } from '../lib/config.mjs';
 import { fakeSbx, saveAppEnv, tempHome } from './support/helpers.mjs';
 
@@ -300,4 +300,26 @@ test('refreshKit leaves the recorded kit alone when sbx refuses', async (t) => {
   sbx.addKit = async () => 1;
   assert.equal(await refreshKit({ sbx, paths }, loadEnv(paths, 'app')), undefined);
   assert.equal(loadEnv(paths, 'app').kit, 'old');
+});
+
+test('updateClaudeRepo runs the update as root with the repo and disabled list, and reports a failure', async (t) => {
+  const { paths } = tempHome(t);
+  saveAppEnv(paths);
+  const sbx = fakeSbx({ sandboxes: [{ name: 'portable-app' }] });
+  let result = { code: 0, stdout: '', stderr: '' };
+  sbx.exec = async (name, command, opts) => {
+    sbx.calls.push(['exec', name, command, opts.user]);
+    return result;
+  };
+  const settings = { claudeConfigRepo: 'https://github.com/me/claude-configuration.git', claudeConfigDisable: ['docker-ports', 'todo'] };
+  const env = loadEnv(paths, 'app');
+
+  assert.deepEqual(await updateClaudeRepo({ sbx, paths }, env, settings), []);
+  assert.deepEqual(sbx.calls, [['exec', 'portable-app', [
+    'env', 'PORTABLE_CLAUDE_CONFIG_REPO=https://github.com/me/claude-configuration.git',
+    'PORTABLE_CLAUDE_CONFIG_DISABLE=docker-ports todo', 'portable-setup', 'update',
+  ], 'root']]);
+
+  result = { code: 1, stdout: '', stderr: 'boom\n' };
+  assert.deepEqual(await updateClaudeRepo({ sbx, paths }, env, settings), ["couldn't update the Claude configuration repo in app: boom"]);
 });
