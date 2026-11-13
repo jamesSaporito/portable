@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { loadEnv, saveEnv } from '../lib/config.mjs';
+import { loadEnv, saveEnv, updateEnv } from '../lib/config.mjs';
 import { createApi, findComposeFiles, parseClaudeInfo, parseContainers } from '../lib/api.mjs';
 import { serveApi, tempHome } from './support/helpers.mjs';
 
@@ -188,8 +188,8 @@ test('parseContainers reads docker ps JSON lines with compose labels', () => {
 });
 
 test('parseClaudeInfo splits the probe output', () => {
-  const info = parseClaudeInfo('abc123\tAdd a rule\t2 days ago\n---\ncommit\nrun-tests\n---\ngit\n');
-  assert.deepEqual(info.commit, { hash: 'abc123', subject: 'Add a rule', when: '2 days ago' });
+  const info = parseClaudeInfo('abc123\n---\ncommit\nrun-tests\n---\ngit\n');
+  assert.equal(info.commit, 'abc123');
   assert.deepEqual(info.skills, ['commit', 'run-tests']);
   assert.deepEqual(info.rules, ['git']);
   assert.equal(parseClaudeInfo('\n---\n\n---\n').installed, false);
@@ -212,9 +212,12 @@ test('POST /api/blocked allows a blocked host for this environment and clears th
 test('PUT /api/claude/repo saves the repo for every environment and switches this sandbox to it', async (t) => {
   const { call, paths, sbx } = await startApi(t);
   const repo = 'https://github.com/me/other-config.git';
+  sbx.exec = async (...args) => { sbx.calls.push(['exec', args[0], args[1], args[2]?.input]); return { code: 0, stdout: 'updated abc1234\n', stderr: '' }; };
   const result = await call('PUT', '/api/claude/repo', { body: { repo } });
   assert.equal(result.status, 200);
   assert.deepEqual(result.body.problems, []);
+  assert.deepEqual(result.body.head, { updated: true, hash: 'abc1234' });
+  assert.equal((await call('GET', '/api/status')).body.events.at(-1).message, `configuration repo set to ${repo}; installed abc1234`);
   assert.equal(JSON.parse(fs.readFileSync(paths.configFile, 'utf8')).claudeConfigRepo, repo);
   assert.deepEqual(sbx.calls.at(-1), ['exec', 'portable-app', ['portable-setup', 'repo'], `${repo}\n`]);
   assert.equal(loadEnv(paths, 'app').appliedRepo, repo);
@@ -232,13 +235,58 @@ test('PUT /api/claude/repo reports a sandbox that can\'t switch, and keeps the s
   assert.equal(loadEnv(paths, 'app').appliedRepo, undefined);
 });
 
-test('POST /api/claude/update pulls the configuration repo from GitHub, not just relinks it', async (t) => {
-  const { call, sbx } = await startApi(t);
-  const result = await call('POST', '/api/claude/update');
+const BLOCKED = {
+  code: 1,
+  stdout: '',
+  stderr: "portable: couldn't fetch https://github.com/me/config.git: github.com is blocked by the sandbox's network rules; using the copy already there\n",
+};
+
+test('PUT /api/claude/repo saves the repo but says why the sandbox couldn\'t pull it, in the activity too', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.exec = async () => BLOCKED;
+  const repo = 'https://github.com/me/config.git';
+  const result = await call('PUT', '/api/claude/repo', { body: { repo } });
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body.problems, []);
-  assert.deepEqual(sbx.calls.at(-1)[2].slice(-2), ['portable-setup', 'update']);
-  assert.ok(sbx.calls.at(-1)[2].includes('PORTABLE_CLAUDE_CONFIG_REPO=https://github.com/me/config.git'));
+  assert.deepEqual(result.body.problems, ["couldn't pull the configuration repo into app: couldn't fetch https://github.com/me/config.git: github.com is blocked by the sandbox's network rules; using the copy already there"]);
+  assert.equal(JSON.parse(fs.readFileSync(paths.configFile, 'utf8')).claudeConfigRepo, repo);
+  assert.equal(loadEnv(paths, 'app').appliedRepo, undefined);
+  const event = (await call('GET', '/api/status')).body.events.at(-1).message;
+  assert.match(event, /^configuration repo set to https:\/\/github\.com\/me\/config\.git, but not pulled: .*github\.com is blocked/);
+});
+
+test('POST /api/claude/update pulls the repo already set and reports what it got', async (t) => {
+  const { call, sbx } = await startApi(t);
+  let stdout = 'updated abc1234\n';
+  sbx.exec = async (name, command) => { sbx.calls.push(['exec', name, command]); return { code: 0, stdout, stderr: '' }; };
+  let result = await call('POST', '/api/claude/update');
+  assert.deepEqual(result.body, { problems: [], head: { updated: true, hash: 'abc1234' } });
+  assert.deepEqual(sbx.calls.at(-1), ['exec', 'portable-app', ['portable-setup', 'pull']]);
+  stdout = 'current abc1234\n';
+  result = await call('POST', '/api/claude/update');
+  assert.deepEqual(result.body.head, { updated: false, hash: 'abc1234' });
+  const events = (await call('GET', '/api/status')).body.events.map((e) => e.message);
+  assert.deepEqual(events.slice(-2), ['Claude configuration updated to abc1234', 'Claude configuration already up to date at abc1234']);
+
+  sbx.exec = async () => BLOCKED;
+  result = await call('POST', '/api/claude/update');
+  assert.match(result.body.problems[0], /^couldn't update the Claude configuration: .*github\.com is blocked/);
+  assert.match((await call('GET', '/api/status')).body.events.at(-1).message, /^Claude configuration not updated: .*github\.com is blocked/);
+});
+
+test('POST /api/claude/update doesn\'t try while offline mode denies the repo\'s host, unless it\'s kept', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  updateEnv(paths, 'app', (e) => { e.offline = true; });
+  assert.equal((await call('GET', '/api/status')).body.claudeRepoBlockedOffline, 'github.com');
+  const before = sbx.calls.length;
+  const result = await call('POST', '/api/claude/update');
+  assert.match(result.body.problems[0], /github\.com is denied while this sandbox is offline; add it to Kept while offline/);
+  assert.equal(sbx.calls.length, before);
+  assert.match((await call('GET', '/api/status')).body.events.at(-1).message, /^Claude configuration not updated: github\.com is denied/);
+
+  updateEnv(paths, 'app', (e) => { e.overrides.offlineAllow = ['**.github.com']; });
+  assert.equal((await call('GET', '/api/status')).body.claudeRepoBlockedOffline, null);
+  await call('POST', '/api/claude/update');
+  assert.deepEqual(sbx.calls.at(-1).slice(0, 3), ['exec', 'portable-app', ['portable-setup', 'pull']]);
 });
 
 test('PUT /api/offline denies every host but Claude\'s in one call, and undoes only its own denies', async (t) => {

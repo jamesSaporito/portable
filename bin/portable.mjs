@@ -93,7 +93,7 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
   // The configuration repo is set at creation; switch to it when another environment's page changed it.
   if (existing && env.appliedRepo !== undefined && env.appliedRepo !== settings.claudeConfigRepo) {
     say(`switching ${env.id} to the configuration repo ${settings.claudeConfigRepo || '(none)'}...`);
-    problems.push(...await applyClaudeRepo(ctx, env, settings));
+    problems.push(...(await applyClaudeRepo(ctx, env, settings)).problems);
   } else {
     if (env.appliedRepo === undefined) {
       env = updateEnv(ctx.paths, env.id, (stored) => { stored.appliedRepo = settings.claudeConfigRepo; });
