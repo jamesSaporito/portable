@@ -6,10 +6,11 @@ import { serveApi } from '../support/helpers.mjs';
 
 const TOKEN = 'ui-test-token';
 
-// `groups` is what `sbx policy ls` gives the Network grid; `blocked` the requests sbx refused.
-export async function startPage({ groups = [], blocked = [] } = {}) {
+// `groups` is what `sbx policy ls` gives the Network grid; `blocked` the requests sbx refused;
+// `global` goes over the default settings.
+export async function startPage({ groups = [], blocked = [], global } = {}) {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'portable-ui-test-')));
-  const { server, port, sbx } = await serveApi({ home, token: TOKEN, groups, blocked });
+  const { server, port, sbx } = await serveApi({ home, token: TOKEN, groups, blocked, global });
   // The raw rules offline mode reads: allow every host in `groups` (they're all sbx defaults here).
   sbx.rules = groups.map((g) => ({ decision: 'allow', resources: g.hosts, provenance: { created_via: 'default' } }));
   const added = [];

@@ -7,6 +7,9 @@
 #                             repo's own install.sh, and points git at gh for GitHub credentials
 #   portable-setup update     lifecycle startup hook, as root, at every boot: fetches the repo and,
 #                             when GitHub has new commits, resets the clone to them and relinks
+#   portable-setup pull       from the host through `sbx exec`, as root: fetches the configuration
+#                             repo already set and applies new commits; prints `updated HASH` or
+#                             `current HASH`, and fails saying why when GitHub can't be reached
 #   portable-setup config     from the host through `sbx exec`, as root, with the skills and rules to
 #                             leave off on stdin (one per line): records them, then updates and relinks
 #   portable-setup repo       from the host through `sbx exec`, as root, with the configuration repo's
@@ -74,6 +77,27 @@ disabled_names() {
   if [ -f "$disable_file" ]; then tr '\n' ' ' < "$disable_file" | sed 's/ *$//'; else echo "${PORTABLE_CLAUDE_CONFIG_DISABLE:-}"; fi
 }
 
+# The host of an HTTPS repo URL: https://user@github.com:443/me/x.git → github.com.
+repo_host() {
+  local host="${1#https://}"
+  host="${host%%/*}"; host="${host##*@}"
+  echo "${host%%:*}"
+}
+
+# Why the sandbox can't reach a host (nothing when it can). The proxy answers a host its rules block
+# with a 403 page pointing at `sbx policy`, so a blocked host tells apart from a network failure.
+host_problem() {
+  local body
+  if ! body="$(curl -s --max-time 8 "https://$1" 2>/dev/null)"; then
+    echo "$1 can't be reached from the sandbox"
+  elif grep -q 'sbx policy' <<< "$body"; then
+    echo "$1 is blocked by the sandbox's network rules"
+  fi
+}
+
+# Whether ~/.claude links to the clone (its install.sh ran).
+linked() { [ "$(readlink "$state_dir/CLAUDE.md" 2>/dev/null)" = "$config_dir/global/CLAUDE.md" ]; }
+
 # git on the clone as root, with root's HOME, so gh (the credential helper) keeps its files out of
 # the agent's home. Hooks only see the env vars the kit declares, so GH_TOKEN is passed on explicitly.
 config_git() { HOME=/root GH_TOKEN="${GH_TOKEN:-}" git -C "$config_dir" "$@"; }
@@ -131,12 +155,20 @@ apply_filter() {
   chmod -R a+rX,go-w "$config_dir"
 }
 
-# Clones or updates the configuration repo (as root). Prints "changed" when files were replaced.
+# Clones or updates the configuration repo (as root). Sets `pulled` when new commits came from
+# GitHub, `changed` when files were replaced (new commits or another filter), and `sync_problem` to
+# why GitHub couldn't be reached (a failed fetch keeps the copy already there).
+pulled=""
+changed=""
+sync_problem=""
 sync_clone() {
-  local repo disabled
+  local repo disabled error why
   repo="$(config_repo)"
   disabled="$(disabled_names)"
   local marker="$config_dir/.git/portable-filtered" refilter=""
+  pulled=""
+  changed=""
+  sync_problem=""
   [ -n "$repo" ] || return 1
 
   # Another repo than the clone's (changed on the page): start over with the new one.
@@ -148,26 +180,39 @@ sync_clone() {
   if [ ! -d "$config_dir/.git" ]; then
     warn "cloning $repo"
     rm -rf "$config_dir"
-    if ! HOME=/root GH_TOKEN="${GH_TOKEN:-}" git clone --quiet "$repo" "$config_dir" >&2; then
-      warn "couldn't clone $repo (is a GitHub token stored, and does it include this repo?); continuing without it"
+    if ! error="$(HOME=/root GH_TOKEN="${GH_TOKEN:-}" git clone --quiet "$repo" "$config_dir" 2>&1)"; then
+      why="$(host_problem "$(repo_host "$repo")")"
+      sync_problem="couldn't clone $repo: ${why:-$(tail -1 <<< "$error") (is a GitHub token stored, and does it include this repo?)}"
+      warn "$sync_problem; continuing without it"
       return 1
     fi
+    pulled=1
     refilter=1
-  elif ! HOME=/root GH_TOKEN="${GH_TOKEN:-}" timeout 20 git -C "$config_dir" fetch --quiet >/dev/null 2>&1; then
-    warn "couldn't update $config_dir (offline?); using the copy already there"
+  elif ! error="$(HOME=/root GH_TOKEN="${GH_TOKEN:-}" timeout 20 git -C "$config_dir" fetch --quiet 2>&1)"; then
+    why="$(host_problem "$(repo_host "$repo")")"
+    sync_problem="couldn't fetch $repo: ${why:-$(tail -1 <<< "$error")}"
+    warn "$sync_problem; using the copy already there"
   elif [ "$(config_git rev-parse HEAD)" != "$(config_git rev-parse '@{u}')" ]; then
     # Only touch the files when there's something new, so sessions already running never see them
     # half-updated. A reset rather than a merge: the clone only ever mirrors the remote.
     save_leftovers
     config_git reset --quiet --hard '@{u}' && config_git clean -fdq
+    pulled=1
     refilter=1
   fi
   if [ "$(cat "$marker" 2>/dev/null)" != "$disabled" ]; then
     refilter=1
   fi
-  [ -z "$refilter" ] || apply_filter "$disabled"
-  [ -n "$refilter" ] && echo changed
+  [ -z "$refilter" ] || { apply_filter "$disabled"; changed=1; }
   return 0
+}
+
+# What the host's page reports after a pull: `updated HASH` when GitHub had new commits, else
+# `current HASH`.
+print_head() {
+  local state=current
+  [ -z "$pulled" ] || state=updated
+  echo "$state $(config_git log -1 --format=%h)"
 }
 
 # Links the clone into ~/.claude with the repo's own install.sh, as the agent. install.sh keeps
@@ -198,19 +243,33 @@ cmd_install() {
   fi
   # A failed clone only warns (sync_clone says why): the sandbox works without the repo, and the
   # startup hook tries again at the next boot.
-  sync_clone >/dev/null && link_config
+  sync_clone && link_config
   return 0
 }
 
 cmd_update() {
   claude_defaults
   [ -n "$(config_repo)" ] || return 0
-  local result
-  result="$(sync_clone)" || return 0
+  sync_clone || return 0
   # Relink when files changed, or when the install never happened (e.g. the repo was unreachable then).
-  if [ "$result" = changed ] || [ "$(readlink "$state_dir/CLAUDE.md" 2>/dev/null)" != "$config_dir/global/CLAUDE.md" ]; then
+  if [ -n "$changed" ] || ! linked; then
     link_config
   fi
+}
+
+# The page's Update from GitHub: like the startup hook, but only for a repo already set, and it fails
+# when GitHub can't be reached, so the page doesn't report an update that didn't happen.
+cmd_pull() {
+  if [ -z "$(config_repo)" ]; then
+    warn "no Claude configuration repo set"
+    return 1
+  fi
+  sync_clone || return 1
+  if [ -n "$changed" ] || ! linked; then
+    link_config
+  fi
+  [ -z "$sync_problem" ] || return 1
+  print_head
 }
 
 # Records the skills and rules to leave off (names on stdin, one per line), then refilters and
@@ -228,14 +287,15 @@ cmd_config() {
   if [ -d "$config_dir/.git" ]; then
     apply_filter "$(disabled_names)"
   else
-    sync_clone >/dev/null || return 0
+    sync_clone || return 0
   fi
   link_config
 }
 
 # Records the configuration repo's URL (one line on stdin; blank for none) and brings the clone in
-# line: re-cloned and relinked when the URL changed, removed with its links when it's blank. Fails
-# when the new repo can't be cloned, so the page can say so.
+# line: re-cloned when the URL changed, else updated from GitHub, then relinked; removed with its
+# links when it's blank. Prints like pull, and fails when GitHub can't be reached, so the page can
+# say so.
 cmd_repo() {
   local repo=""
   IFS= read -r repo || true
@@ -250,8 +310,10 @@ cmd_repo() {
     rm -rf "$config_dir"
     return 0
   fi
-  sync_clone >/dev/null || return 1
+  sync_clone || return 1
   link_config
+  [ -z "$sync_problem" ] || return 1
+  print_head
 }
 
 # Replaces portable's block in /etc/sandbox-persistent.sh with the `export AWS_...` lines on stdin
@@ -533,10 +595,11 @@ cmd_doctor() {
 case "${1:-}" in
   install) cmd_install ;;
   update) cmd_update ;;
+  pull) cmd_pull ;;
   config) cmd_config ;;
   aws) cmd_aws ;;
   ports) cmd_ports ;;
   repo) cmd_repo ;;
   doctor) cmd_doctor ;;
-  *) echo "usage: portable-setup install|update|config|aws|ports|repo|doctor" >&2; exit 2 ;;
+  *) echo "usage: portable-setup install|update|pull|config|aws|ports|repo|doctor" >&2; exit 2 ;;
 esac
