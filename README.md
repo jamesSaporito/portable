@@ -254,6 +254,8 @@ npm run test:ui     # Browser tests for the page, with Playwright and your Googl
 
 These need a Node on your PATH. portable's own is at `~/.local/share/portable-node/current/bin`.
 
+In a portable sandbox, which has no Chrome, run the browser tests with `npm run test:ui:docker` instead. It runs them in a throwaway container on the sandbox's Docker with Debian's Chromium, installed on each run. The container is removed when they finish, and so is the base image if the run pulled it. The project's `/test-ui` skill picks the right one for where Claude is running. Changes to `install.sh`, the Keychain, or how sandboxes are created still need checking on the Mac with `portable doctor`.
+
 Tool versions and the base image digest are pinned in `kit/portable.dockerfile`, each with its SHA-256. Change both together. `engines.node` in `package.json` sets the Node line for `install.sh` and `portable doctor`. Claude Code comes from sbx's built-in `claude` agent, so its version follows sbx.
 
 ## Removing it
