@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { configure, secretStatus } from '../lib/secrets.mjs';
+import { configure, createSecrets, secretStatus } from '../lib/secrets.mjs';
 
 // A fake secret store: `stored` names, what set() returns, and a log of calls.
 function setup({ stored = [], registered = [], setCode = 0, answers = [], sandboxes = [] } = {}) {
@@ -83,4 +83,11 @@ test('configure needs a terminal', async () => {
   const lines = [];
   assert.equal(await configure({ interactive: false, write: (l) => lines.push(l) }), 1);
   assert.match(lines[0], /terminal/);
+});
+
+test('register has sbx read the Keychain on every use, so a replaced token applies at once', async () => {
+  const runs = [];
+  const runner = { async run(cmd, args) { runs.push([cmd, ...args]); return { code: 0 }; } };
+  assert.equal(await createSecrets(runner).register('GH_TOKEN'), 0);
+  assert.deepEqual(runs, [['sbx', 'secret', 'set', 'github', '--command', 'security find-generic-password -s portable -a GH_TOKEN -w', '--refresh', 'on-demand']]);
 });
