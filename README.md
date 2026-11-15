@@ -64,7 +64,7 @@ Public repos clone without a token. Pushing and `gh` need one.
 
 The token goes in your Keychain and sbx reads it from there. A fine-grained token covers one owner, so a token for your account can't reach an organization's repos.
 
-To replace the token later, run `portable configure` again. Existing sandboxes use the new one without a restart, though sbx may keep the old one for up to 55 minutes ([Docker docs](https://docs.docker.com/ai/sandboxes/configuration/credentials/)).
+To replace the token later, run `portable configure` again. Existing sandboxes use the new one right away, without a restart: sbx reads the Keychain on every use rather than caching the token ([Docker docs](https://docs.docker.com/ai/sandboxes/configuration/credentials/)).
 
 ### 4. Check the setup
 
