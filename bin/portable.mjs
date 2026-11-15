@@ -65,6 +65,11 @@ async function currentEnv(ctx, name) {
 async function prepare(ctx, env, ws, { openPage = false } = {}) {
   const settings = settingsFor(ctx, env);
   const existing = await ctx.sbx.get(env.sandbox);
+  // sbx can't update a sandbox with capitals in its name (see cleanName), so an older environment
+  // whose sandbox was removed gets it back with a lowercase name.
+  if (!existing && /[A-Z]/.test(env.sandbox)) {
+    env = updateEnv(ctx.paths, env.id, (stored) => { stored.sandbox = stored.sandbox.toLowerCase(); });
+  }
   if (!existing) {
     if (!(await createSandbox(ctx, env, settings, ws))) throw new UserError(`couldn't create the sandbox ${env.sandbox}`);
   }
@@ -74,7 +79,9 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
   const problems = [];
   // portable's kit changed since the sandbox was made (`portable update`): offer to apply it in place.
   if (existing && kitOutdated(env)) {
-    if (await confirm(`portable's kit changed since ${env.id}'s sandbox was made. Update the sandbox now? Its Docker data and Claude history are kept; sessions running in it end`)) {
+    if (/[A-Z]/.test(env.sandbox)) {
+      say(`portable's kit changed, but sbx can't update ${env.sandbox} in place: its name has capitals, which Docker refuses. To move it to the new kit, run 'portable rm ${env.id}' and start it again; it comes back as ${env.sandbox.toLowerCase()} with its settings and ports, but without its Docker data and Claude history`);
+    } else if (await confirm(`portable's kit changed since ${env.id}'s sandbox was made. Update the sandbox now? Its Docker data and Claude history are kept; sessions running in it end`)) {
       const result = await refreshKit(ctx, env);
       if (result === undefined) say(`couldn't update the sandbox ${env.sandbox}; it keeps its current kit`);
       else problems.push(...result);
