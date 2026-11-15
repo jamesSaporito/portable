@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { saveEnv } from '../lib/config.mjs';
-import { UserError, cleanName, protectedFolders, resolveEnv, sessionFolder, workspaceFolder } from '../lib/env.mjs';
+import { UserError, cleanName, envByName, protectedFolders, resolveEnv, sessionFolder, workspaceFolder } from '../lib/env.mjs';
 import { tempHome } from './support/helpers.mjs';
 
 function setup(t) {
@@ -65,8 +65,8 @@ test('protectedFolders finds the git repo ~/.claude/CLAUDE.md links into', (t) =
   assert.equal(protectedFolders(home, home).config, repo);
 });
 
-test('cleanName makes sbx-safe names', () => {
-  assert.equal(cleanName('My App_2'), 'My-App-2');
+test('cleanName makes sbx-safe, lowercase names', () => {
+  assert.equal(cleanName('My App_2'), 'my-app-2');
   assert.equal(cleanName('.hidden'), 'hidden');
   assert.throws(() => cleanName('---'), UserError);
 });
@@ -99,4 +99,12 @@ test('resolveEnv returns the saved environment, and keeps --name ones separate',
   assert.equal(named.named, true);
   saveEnv(paths, named);
   assert.throws(() => resolveEnv({ paths, folder: ws, name: 'api', sandboxes: [] }), /environment of/);
+});
+
+test('envByName finds an environment by its id or by its sandbox name', (t) => {
+  const { paths, ws } = setup(t);
+  saveEnv(paths, { id: 'Portfolio2', path: path.join(ws, 'Portfolio2'), named: false, sandbox: 'portable-portfolio2', overrides: {}, ports: {} });
+  assert.equal(envByName(paths, 'Portfolio2').id, 'Portfolio2');
+  assert.equal(envByName(paths, 'portfolio2').id, 'Portfolio2');
+  assert.equal(envByName(paths, 'portable-portfolio2').id, 'Portfolio2');
 });
