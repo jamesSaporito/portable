@@ -34,6 +34,9 @@ capabilities:
           - raw.githubusercontent.com
           # npm (Claude Code's docs list it too: https://code.claude.com/docs/en/network-config)
           - registry.npmjs.org
+          # GitHub Packages' npm registry, for environments that turn the packages token on
+          # (portable-setup npm): https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry
+          - npm.pkg.github.com
           # Terraform providers and modules
           - registry.terraform.io
           - releases.hashicorp.com

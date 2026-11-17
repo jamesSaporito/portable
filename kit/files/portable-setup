@@ -17,6 +17,8 @@
 #                             relinks, or removes the clone and its links
 #   portable-setup aws        from the host through `sbx exec`, as root, with `export AWS_...`
 #                             lines on stdin: makes them the sandbox's AWS credentials
+#   portable-setup npm        the same with an `export NPM_TOKEN=...` line (or nothing, to remove it):
+#                             the GitHub packages token, for environments that turn it on
 #   portable-setup ports      from the host's agent through `sbx exec`, as root, with `SANDBOX MAC` port
 #                             pairs on stdin: records where ports are reachable on the Mac
 #   portable-setup doctor     from `portable doctor` through `sbx exec`, as the agent: checks the
@@ -316,15 +318,15 @@ cmd_repo() {
   print_head
 }
 
-# Replaces portable's block in /etc/sandbox-persistent.sh with the `export AWS_...` lines on stdin
-# (only names starting with AWS_ are taken). sbx reads that file into every new session, so fresh
-# STS credentials reach the next `portable` without recreating the sandbox. Other content stays.
-cmd_aws() {
-  local lines line name begin='# portable-aws begin' end='# portable-aws end' tmp
+# Replaces portable's `# portable-<block>` block in /etc/sandbox-persistent.sh with the `export`
+# lines on stdin whose names match the pattern; none removes it. sbx reads that file into every new
+# session, so new values reach the next `portable` without recreating the sandbox. Other content stays.
+replace_block() {
+  local lines line name begin="# portable-$1 begin" end="# portable-$1 end" tmp
   lines=""
   while IFS= read -r line; do
     name="${line#export }"; name="${name%%=*}"
-    case "$name" in AWS_[A-Z_]*) lines="$lines$line"$'\n' ;; esac
+    case "$name" in $2) lines="$lines$line"$'\n' ;; esac
   done
   tmp="$(mktemp)"
   { [ -f "$persistent" ] && awk -v b="$begin" -v e="$end" '$0 == b { skip = 1 } !skip { print } $0 == e { skip = 0 }' "$persistent"
@@ -332,6 +334,14 @@ cmd_aws() {
   } > "$tmp"
   install -m 644 "$tmp" "$persistent" && rm -f "$tmp"
 }
+
+# The `export AWS_...` lines on stdin (only names starting with AWS_) become the sandbox's AWS
+# credentials, so fresh STS credentials reach the next `portable`.
+cmd_aws() { replace_block aws 'AWS_[A-Z_]*'; }
+
+# The `export NPM_TOKEN=...` line on stdin becomes the GitHub packages token new sessions get, for
+# compose's `${NPM_TOKEN}`; empty stdin removes it.
+cmd_npm() { replace_block npm 'NPM_TOKEN'; }
 
 # Writes the ports portable forwards to the Mac (`SANDBOX MAC` per line on stdin) to
 # /etc/portable/ports, which the start skill and CLAUDE.md read to give the user Mac URLs. Only
@@ -403,9 +413,11 @@ check_secrets() {
   echo "Credentials"
   # The proxy holds the real values; the sandbox should only see placeholders.
   local leak
-  leak="$(env | grep -E '(sk-ant-(api|oat)[0-9]*-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' | grep -v proxy-managed | cut -d= -f1)"
+  # NPM_TOKEN is the exception: the GitHub packages token, real on purpose where it's turned on.
+  leak="$(env | grep -E '(sk-ant-(api|oat)[0-9]*-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' | grep -v proxy-managed | grep -v '^NPM_TOKEN=' | cut -d= -f1)"
   if [ -n "$leak" ]; then fail "a real token is readable in the sandbox's environment: $leak"
   else ok "no real Claude or GitHub token is in the sandbox's environment (the proxy adds them)"; fi
+  if [ -n "${NPM_TOKEN:-}" ]; then note "NPM_TOKEN holds the real GitHub packages token (GitHub Packages is on for this environment)"; fi
   if [ -z "${GH_TOKEN:-}" ]; then
     fail "GitHub: no token was bound (store one with 'portable secret set GH_TOKEN', then recreate the sandbox)"
   elif [ -f /etc/gitconfig ] && grep -q 'gh auth git-credential' /etc/gitconfig; then
@@ -598,8 +610,9 @@ case "${1:-}" in
   pull) cmd_pull ;;
   config) cmd_config ;;
   aws) cmd_aws ;;
+  npm) cmd_npm ;;
   ports) cmd_ports ;;
   repo) cmd_repo ;;
   doctor) cmd_doctor ;;
-  *) echo "usage: portable-setup install|update|pull|config|aws|ports|repo|doctor" >&2; exit 2 ;;
+  *) echo "usage: portable-setup install|update|pull|config|aws|npm|ports|repo|doctor" >&2; exit 2 ;;
 esac

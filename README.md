@@ -2,7 +2,7 @@
 
 Claude Code in a microVM on your Mac. Each project folder gets its own sandbox with Claude Code, git, the GitHub CLI, the AWS CLI, Terraform, Node.js 26 with npm, pnpm and its own Docker engine. Claude works on the folder you start it in and sees nothing else on the Mac.
 
-portable is a thin layer over [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/). A proxy on the Mac decides which hosts a sandbox may reach and adds your credentials to requests, so tokens never enter the VM. portable adds the tools, your Claude configuration repo, Keychain-backed secrets, AWS SSO credentials, ports that keep their number, a page for each environment, the `/start`, `/stop` and `/ui` skills, and `portable doctor`. A project needs no files added to it.
+portable is a thin layer over [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/). A proxy on the Mac decides which hosts a sandbox may reach and adds your credentials to requests, so tokens never enter the VM (except the GitHub packages token, for environments that turn it on). portable adds the tools, your Claude configuration repo, Keychain-backed secrets, AWS SSO credentials, ports that keep their number, a page for each environment, the `/start`, `/stop` and `/ui` skills, and `portable doctor`. A project needs no files added to it.
 
 This is a work in progress, built for convenience.
 
@@ -65,6 +65,17 @@ Public repos clone without a token. Pushing and `gh` need one.
 The token goes in your Keychain and sbx reads it from there. A fine-grained token covers one owner, so a token for your account can't reach an organization's repos.
 
 To replace the token later, run `portable configure` again. Existing sandboxes use the new one right away, without a restart: sbx reads the Keychain on every use rather than caching the token ([Docker docs](https://docs.docker.com/ai/sandboxes/configuration/credentials/)).
+
+### Private npm packages (optional)
+
+For projects that install private npm packages from GitHub Packages (`npm.pkg.github.com`), with `NPM_TOKEN` passed to their compose builds:
+
+1. On GitHub, generate a classic token: **Settings → Developer settings → Personal access tokens → Tokens (classic)**. GitHub Packages takes no fine-grained tokens ([GitHub docs](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages)).
+2. **Scope:** `read:packages` only. Give it an expiry.
+3. Run `portable configure` and store it as the GitHub packages token.
+4. Turn it on for each environment that needs it, in the **GitHub Packages** section of its page.
+
+Unlike the GitHub token, this one goes into the sandbox for real, as `NPM_TOKEN` in new sessions: sbx's proxy adds secrets only to the VM's own requests, not to the ones containers and Docker builds make, which is where `npm ci` runs. It's written again at each `portable` start, so a replaced token arrives then. **Turn off** removes it.
 
 ### 4. Check the setup
 
@@ -132,6 +143,7 @@ Every running environment has a page on `127.0.0.1`. `portable ui` opens it, `po
 - **Network:** this environment's extra allowed hosts, every host the sandbox can reach, and every host it tried that was refused. Search a host or URL to see which rule applies, and allow or dismiss a blocked host.
 - **Sandbox settings:** CPUs and memory. They apply when the sandbox is recreated.
 - **AWS:** see [AWS](#aws).
+- **GitHub Packages:** turns the GitHub packages token on or off for this environment. See [Private npm packages](#private-npm-packages-optional).
 - **Claude configuration:** the configuration repo, its commit, an update button, a checkbox for each skill and rule, and whether each token is stored and Claude is signed in.
 - **Activity:** what portable did for this environment.
 
@@ -156,6 +168,7 @@ The sandbox has credentials but no profiles, so if your Terraform sets `profile 
 | Claude | Signed in once per Mac. The sandbox sees a placeholder |
 | GitHub | Your token, added by the proxy to requests to GitHub. The sandbox sees a placeholder |
 | AWS | Off unless turned on for the environment, then about an hour of temporary credentials |
+| GitHub Packages | Off unless turned on for the environment, then the real packages token in `NPM_TOKEN` |
 | Claude settings | Your skills, rules and `CLAUDE.md` from your configuration repo, minus any turned off on the page, plus portable's `/start`, `/stop` and `/ui` |
 | The internet | Only the allowed hosts below. Everything else is refused, for Claude and for the containers it starts |
 
@@ -164,7 +177,7 @@ The sandbox has credentials but no profiles, so if your Terraform sets `profile 
 sbx sends every outbound TCP connection through the Mac and refuses destinations no rule allows. UDP and ICMP are blocked. Allowed:
 
 - **sbx's own defaults:** about 200 hosts for AI services, package managers, code hosting, cloud providers and OS packages.
-- **portable's kit** in `kit/portable.yaml`: GitHub, npm, Terraform's registry and HashiCorp releases, Docker Hub, the Alpine and Debian mirrors, `*.amazonaws.com`, and the MCP servers for Atlassian, GitHub and AWS documentation. MCP servers still have to be added to Claude with `claude mcp add`.
+- **portable's kit** in `kit/portable.yaml`: GitHub, npm and GitHub Packages' npm registry, Terraform's registry and HashiCorp releases, Docker Hub, the Alpine and Debian mirrors, `*.amazonaws.com`, and the MCP servers for Atlassian, GitHub and AWS documentation. MCP servers still have to be added to Claude with `claude mcp add`.
 - **Your extra hosts:** per environment on its page under **Network**, or for every environment with `allowDomains` in `config.json`.
 
 A rule covers one port, so a host allowed for HTTPS is still refused over `http://`. A blocked host fails fast and shows on the page. The sandbox's `CLAUDE.md` tells Claude to report a blocked host rather than work around it.
@@ -184,6 +197,7 @@ Each sandbox has its own Docker engine, so Claude can `docker compose up` a proj
 ### Limits
 
 - AWS credentials are in the VM for their hour. Use a profile with only the permissions the project needs.
+- With GitHub Packages on, the packages token is readable in the sandbox, by Claude and by the containers and images given it (a Dockerfile's `ENV NPM_TOKEN` keeps it in the image). A classic token reads every package your account can, so keep it to `read:packages` with an expiry.
 - An allowed service can still receive data: a push to any GitHub repo your token covers, a package publish, an upload to any S3 bucket.
 - The workspace is a two-way channel. Anything a session writes in the project runs on your Mac if you run it there: `.git/hooks`, `.git/config`, `node_modules/.bin`, package scripts, Makefiles. After an unattended run, read those paths the way you'd read a pull request.
 - Your GitHub token decides what a session can change. `portable update` and your configuration repo's `./install.sh update` run what's on those repos' default branches, so protect both with a GitHub ruleset that blocks direct pushes.
@@ -200,6 +214,7 @@ Each sandbox has its own Docker engine, so Claude can `docker compose up` a proj
 | `claudeConfigDisable` | Skills or rules to turn off in sandboxes, like `["docker-ports"]` | Yes, as checkboxes |
 | `allowDomains` | Extra hosts sandboxes may reach, like `["pypi.org"]` | Yes, added to these |
 | `awsProfile` | The Mac's AWS profile to use. AWS is off until a page turns it on | Per environment only |
+| `githubPackages` | Puts the GitHub packages token in the sandbox as `NPM_TOKEN`. Off until a page turns it on | Per environment only |
 | `cpus`, `memory` | The size of each VM, default 4 and `8g`. Fixed when a sandbox is created | Yes |
 
 The shell variables `WORKSPACE_DIR`, `PORTABLE_CLAUDE_CONFIG_REPO`, `PORTABLE_CLAUDE_CONFIG_DISABLE` and `PORTABLE_ALLOW_DOMAINS` override `config.json`. Commits use the `user.name` and `user.email` from your Mac's git config.

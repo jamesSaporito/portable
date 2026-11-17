@@ -9,7 +9,7 @@ import { serveApi, tempHome } from './support/helpers.mjs';
 
 const TOKEN = 'secret-token';
 
-async function startApi(t) {
+async function startApi(t, { packagesToken } = {}) {
   const { home } = tempHome(t);
   const { server, port, paths, folder, sbx } = await serveApi({
     home,
@@ -22,7 +22,11 @@ async function startApi(t) {
         return { code: 0, stdout: '', stderr: '' };
       },
     },
-    secrets: { backend: 'Keychain', async has(name) { return name === 'GH_TOKEN'; } },
+    secrets: {
+      backend: 'Keychain',
+      async has(name) { return name === 'GH_TOKEN' || (name === 'GH_PACKAGES_TOKEN' && packagesToken !== undefined); },
+      async read(name) { return name === 'GH_PACKAGES_TOKEN' ? packagesToken : undefined; },
+    },
   });
   fs.mkdirSync(path.join(folder, 'api'), { recursive: true });
   fs.writeFileSync(path.join(folder, 'compose.yaml'), 'services: {}\n');
@@ -137,7 +141,7 @@ test('POST /api/services only runs compose files inside the environment', async 
   const ok = await call('POST', '/api/services', { body: { file: path.join(folder, 'compose.yaml'), action: 'up' } });
   assert.equal(ok.status, 200);
   const exec = sbx.calls.find((c) => c[0] === 'exec');
-  assert.deepEqual(exec[2], ['docker', 'compose', '-f', path.join(folder, 'compose.yaml'), 'up', '--build', '--detach']);
+  assert.deepEqual(exec[2], ['bash', '-c', 'exec "$@"', 'bash', 'docker', 'compose', '-f', path.join(folder, 'compose.yaml'), 'up', '--build', '--detach']);
   assert.equal((await call('POST', '/api/services', { body: { file: '/etc/compose.yaml', action: 'up' } })).status, 400);
   assert.equal((await call('POST', '/api/services', { body: { file: path.join(folder, 'compose.yaml'), action: 'rm' } })).status, 400);
 });
@@ -159,6 +163,34 @@ test('AWS is off by default, and the page turns it on per environment', async (t
   assert.equal((await call('PUT', '/api/settings', { body: { overrides: { awsProfile: null } } })).status, 200);
   off = (await call('GET', '/api/aws')).body;
   assert.equal(off.enabled, false);
+});
+
+test('GitHub Packages is off by default; the page puts the token in the sandbox and takes it out', async (t) => {
+  const { call, paths, sbx } = await startApi(t, { packagesToken: 'ghp_abc123' });
+  const npmCalls = () => sbx.calls.filter((c) => c[0] === 'exec' && c[2].join(' ') === 'portable-setup npm');
+
+  assert.equal((await call('PUT', '/api/settings', { body: { overrides: { githubPackages: true } } })).body.problems.length, 0);
+  assert.equal(loadEnv(paths, 'app').overrides.githubPackages, true);
+  assert.deepEqual(npmCalls().map((c) => c[3]), ['export NPM_TOKEN=ghp_abc123\n']);
+  assert.equal(loadEnv(paths, 'app').npmToken, true);
+
+  assert.equal((await call('PUT', '/api/settings', { body: { overrides: { githubPackages: null } } })).body.problems.length, 0);
+  assert.deepEqual(npmCalls().map((c) => c[3]), ['export NPM_TOKEN=ghp_abc123\n', '']);
+  assert.equal(loadEnv(paths, 'app').npmToken, undefined);
+});
+
+test('GitHub Packages on without a stored token is a problem, and touches nothing in the sandbox', async (t) => {
+  const { call, sbx } = await startApi(t);
+  const { problems } = (await call('PUT', '/api/settings', { body: { overrides: { githubPackages: true } } })).body;
+  assert.match(problems[0], /portable configure/);
+  assert.ok(!sbx.calls.some((c) => c[0] === 'exec' && c[2].join(' ') === 'portable-setup npm'));
+});
+
+test('a stored packages token that the sandbox shell would misread is refused', async (t) => {
+  const { call, sbx } = await startApi(t, { packagesToken: 'ghp_x; rm -rf /' });
+  const { problems } = (await call('PUT', '/api/settings', { body: { overrides: { githubPackages: true } } })).body;
+  assert.match(problems[0], /doesn't look like a GitHub token/);
+  assert.ok(!sbx.calls.some((c) => c[0] === 'exec' && c[2].join(' ') === 'portable-setup npm'));
 });
 
 test('GET /api/secrets lists names and status, never values', async (t) => {

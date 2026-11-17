@@ -6,13 +6,13 @@ import { createInterface } from 'node:readline/promises';
 import { loadEnv, listEnvs, saveEnv, updateEnv } from '../lib/config.mjs';
 import {
   ROOT, agentDir, agentSync, alive, applyClaudeConfig, applyClaudeRepo, applyDomains, applyOffline, createContext, createSandbox, ensureAgent,
-  kitOutdated, readAgent, refreshAws, refreshKit, settingsFor, stopAgent, updateClaudeRepo,
+  applyNpmToken, kitOutdated, readAgent, refreshAws, refreshKit, settingsFor, stopAgent, updateClaudeRepo,
 } from '../lib/environment.mjs';
 import { PREFIX, UserError, envByName, out, resolveEnv, say, sessionFolder, workspaceFolder } from '../lib/env.mjs';
 import { portsTable, syncPorts } from '../lib/ports.mjs';
 import { tcpForwards } from '../lib/sbx.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
-import { configure } from '../lib/secrets.mjs';
+import { SECRETS, configure } from '../lib/secrets.mjs';
 
 const USAGE = `Works with the sandbox for the current folder; --name NAME picks a separate, named one.
   portable [--name NAME]               -> bash in the folder's sandbox
@@ -28,7 +28,7 @@ const USAGE = `Works with the sandbox for the current folder; --name NAME picks 
   portable update                      -> update the installed copy from GitHub
   portable configure                   -> store the secrets portable needs, prompting for each
   portable -v                          -> show portable's version and the commit it runs from
-  portable secret set|rm NAME          -> store or remove one secret (GH_TOKEN)
+  portable secret set|rm NAME          -> store or remove one secret (GH_TOKEN, GH_PACKAGES_TOKEN)
   portable doctor --no-sandbox         -> the checks on this computer only`;
 
 function usage(text) {
@@ -97,6 +97,8 @@ async function prepare(ctx, env, ws, { openPage = false } = {}) {
   // AWS only when this environment turned it on; an expired session is reported, not signed in
   // here (the page's Sign in button does that, as does `aws sso login`).
   problems.push(...await refreshAws(ctx, env, settings));
+  // The GitHub packages token, when this environment turned it on, fresh from the Keychain.
+  problems.push(...await applyNpmToken(ctx, env, settings));
   // The configuration repo is set at creation; switch to it when another environment's page changed it.
   if (existing && env.appliedRepo !== undefined && env.appliedRepo !== settings.claudeConfigRepo) {
     say(`switching ${env.id} to the configuration repo ${settings.claudeConfigRepo || '(none)'}...`);
@@ -321,7 +323,11 @@ async function prune(ctx) {
 async function secret(ctx, action, name) {
   if (!['set', 'rm'].includes(action) || !name) usage('portable secret set|rm NAME');
   const code = action === 'set' ? await ctx.secrets.set(name) : await ctx.secrets.remove(name);
-  if (code === 0 && action === 'set') out(`Stored ${name}. Sandboxes bind it when they're created; 'portable rm' the ones that should use it.`);
+  if (code === 0 && action === 'set') {
+    out(SECRETS[name].perSandbox
+      ? `Stored ${name}. Environments that turn it on on their page get it at their next portable start.`
+      : `Stored ${name}. Sandboxes bind it when they're created; 'portable rm' the ones that should use it.`);
+  }
   return code;
 }
 
