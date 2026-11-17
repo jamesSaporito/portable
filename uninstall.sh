@@ -98,7 +98,7 @@ remove_old_docker() {
 
 remove_secrets() {
   local name stored=()
-  for name in GH_TOKEN INFRACOST_CLI_AUTHENTICATION_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
+  for name in GH_TOKEN GH_PACKAGES_TOKEN INFRACOST_CLI_AUTHENTICATION_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
     security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$name" >/dev/null 2>&1 && stored+=("$name")
   done
   [ ${#stored[@]} -gt 0 ] || return 0

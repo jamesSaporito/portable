@@ -52,6 +52,15 @@ test('the hosts kept while offline are the environment\'s own, empty unless it s
   assert.throws(() => validateOverrides({ offlineAllow: ['$(reboot)'] }), /offlineAllow/);
 });
 
+test('GitHub Packages is off unless the environment turned it on', () => {
+  assert.equal(effectiveSettings(DEFAULTS, { overrides: {} }).githubPackages, false);
+  assert.equal(effectiveSettings({ ...DEFAULTS, githubPackages: true }, { overrides: {} }).githubPackages, false);
+  assert.equal(effectiveSettings(DEFAULTS, { overrides: { githubPackages: true } }).githubPackages, true);
+  assert.deepEqual(validateOverrides({ githubPackages: true }), { githubPackages: true });
+  assert.deepEqual(validateOverrides({ githubPackages: null }), { githubPackages: null });
+  assert.throws(() => validateOverrides({ githubPackages: 'yes' }), /githubPackages/);
+});
+
 test('validateOverrides accepts good values and rejects bad ones', () => {
   assert.deepEqual(validateOverrides({ allowDomains: ['pypi.org', '*.example.com', 'pypi.org'], memory: '4G', cpus: 2, awsProfile: null }), {
     allowDomains: ['pypi.org', '*.example.com'],
