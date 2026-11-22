@@ -99,8 +99,9 @@ export function fakeRunner(answers = {}) {
 
 // Serves the real page and API for the `app` environment (folder <home>/ws/app) against a fake sbx,
 // on a free port. `global` goes over the default settings; `groups` is what `sbx policy ls` gives
-// the Network grid and `blocked` the requests sbx refused. The caller closes `server`.
-export async function serveApi({ home, token, global = {}, runner, secrets, groups, blocked = [] }) {
+// the Network grid and `blocked` the requests sbx refused; `restart` stands in for the agent's
+// restart. The caller closes `server`.
+export async function serveApi({ home, token, global = {}, runner, secrets, groups, blocked = [], restart }) {
   const paths = portablePaths({ HOME: home });
   const folder = path.join(home, 'ws', 'app');
   fs.mkdirSync(folder, { recursive: true });
@@ -126,7 +127,7 @@ export async function serveApi({ home, token, global = {}, runner, secrets, grou
     async refreshBlocked() { this.blocked = await sbx.approvals('portable-app'); },
   };
   let port;
-  const server = http.createServer(createApi({ ctx, id: 'app', token, getPort: () => port, state }));
+  const server = http.createServer(createApi({ ctx, id: 'app', token, getPort: () => port, state, restart }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   port = server.address().port;
   return { server, port, paths, folder, sbx };

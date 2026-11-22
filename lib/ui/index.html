@@ -63,10 +63,20 @@
           <input name="host" placeholder="github.com or **.github.com">
           <small class="muted">Hosts that stay reachable while this sandbox is offline, if a rule allows them (a new host goes in Extra allowed hosts too). Saved for this environment, so they're kept every time it goes offline. <code>**.example.com</code> keeps the domain and every subdomain. A deny beats every allow, so keeping <code>github.com</code> also leaves a <code>**.github.com</code> rule undenied, and its subdomains with it.</small>
         </label>
+        <p class="warn" id="offline-keep-off" hidden>Turned off: going offline denies these hosts too. The list stays saved for when you turn it back on.</p>
         <ul id="offline-keep" class="plain"></ul>
         <div class="actions">
           <button type="submit">Keep</button>
+          <button type="button" id="offline-keep-switch">Turn off</button>
           <button type="button" id="offline-keep-clear">Clear all</button>
+        </div>
+        <div class="common-hosts">
+          <p class="muted" id="offline-common-text"></p>
+          <button type="button" id="offline-common">Keep common hosts</button>
+          <details id="offline-common-details">
+            <summary id="offline-common-summary">Show the hosts</summary>
+            <div id="offline-common-list"></div>
+          </details>
         </div>
       </form>
       <form id="hosts-form">
@@ -164,6 +174,14 @@
       <h3>Secrets</h3>
       <p class="muted" id="secrets-note"></p>
       <ul id="secrets" class="plain"></ul>
+    </section>
+
+    <section id="agent">
+      <div class="section-head">
+        <h2>Page agent</h2>
+        <button type="button" id="agent-restart">Restart</button>
+      </div>
+      <p class="muted" id="agent-text"></p>
     </section>
 
     <section id="activity">

@@ -135,8 +135,9 @@ button {
   color: var(--text);
   cursor: pointer;
 }
-button:hover { border-color: var(--accent); }
-button:disabled { opacity: 0.5; cursor: progress; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button[aria-busy=true] { cursor: progress; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 button.small { padding: 2px 8px; font-size: 13px; }
 
@@ -155,6 +156,13 @@ label > span { display: block; font-weight: 600; font-size: 14px; margin-bottom:
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .warn { color: var(--warn); }
+
+.common-hosts { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.common-hosts p { margin: 0 0 8px; font-size: 14px; }
+.common-hosts details { margin-top: 8px; }
+.common-hosts summary { cursor: pointer; font-size: 14px; }
+.common-hosts h3 { font-size: 14px; margin: 10px 0 4px; }
+.common-hosts ul { margin: 0; }
 
 a { color: var(--accent); }
 

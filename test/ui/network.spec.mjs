@@ -126,6 +126,9 @@ test('hosts kept while offline are saved, added and removed one by one or all at
   const clear = page.locator('#offline-keep-clear');
   const denied = () => server.sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.resources[0]).sort();
   await expect(clear).toBeDisabled();
+  // Nothing to clear or turn off isn't work in progress, so no progress cursor.
+  await expect(clear).toHaveCSS('cursor', 'default');
+  await expect(page.locator('#offline-keep-switch')).toHaveCSS('cursor', 'default');
 
   await form.locator('input[name=host]').fill('mcp.atlassian.com **.googleapis.com');
   await form.locator('button[type=submit]').click();
@@ -143,6 +146,20 @@ test('hosts kept while offline are saved, added and removed one by one or all at
   await expect(kept).toHaveText(['**.googleapis.com']);
   expect(denied()).toEqual(['**.amazonaws.com', '*.amazonaws.com', 'mcp.atlassian.com']);
 
+  // Turned off, the list stays but its hosts are denied too; back on frees them again.
+  const toggleKeep = page.locator('#offline-keep-switch');
+  await toggleKeep.click();
+  await expect(page.locator('#banner')).toHaveText('Kept while offline is off: going offline denies those hosts too.');
+  await expect(toggleKeep).toHaveText('Turn back on');
+  await expect(page.locator('#offline-keep-off')).toBeVisible();
+  await expect(kept).toHaveText(['**.googleapis.com']);
+  expect(denied()).toEqual(['**.amazonaws.com', '**.googleapis.com', '*.amazonaws.com', 'mcp.atlassian.com']);
+  await toggleKeep.click();
+  await expect(page.locator('#banner')).toHaveText('Kept while offline is back on.');
+  await expect(toggleKeep).toHaveText('Turn off');
+  await expect(page.locator('#offline-keep-off')).toBeHidden();
+  expect(denied()).toEqual(['**.amazonaws.com', '*.amazonaws.com', 'mcp.atlassian.com']);
+
   await clear.click();
   await expect(page.locator('#banner')).toHaveText('No hosts are kept while offline.');
   await expect(kept).toHaveCount(0);
@@ -152,6 +169,33 @@ test('hosts kept while offline are saved, added and removed one by one or all at
   await form.locator('input[name=host]').fill('$(reboot)');
   await form.locator('button[type=submit]').click();
   await expect(page.locator('#banner')).toHaveText(/offlineAllow must be host names/);
+});
+
+test('Keep common hosts keeps every common host at once, listed in a collapsed list', async () => {
+  const button = page.locator('#offline-common');
+  const details = page.locator('#offline-common-details');
+  const kept = page.locator('#offline-keep li code');
+  await expect(page.locator('#offline-common-text')).toContainText('adds the 22 hosts GitHub, Docker, npm and AWS docs need');
+  await expect(details).not.toHaveAttribute('open');
+  await expect(page.locator('#offline-common-list')).toBeHidden();
+
+  await page.locator('#offline-common-summary').click();
+  await expect(page.locator('#offline-common-list h3')).toHaveText(['GitHub', 'Docker', 'npm', 'AWS docs']);
+  // The test's policy has no GitHub rule, so github.com is marked; the kit's *.amazonaws.com isn't asked of.
+  const github = page.locator('#offline-common-list li').filter({ hasText: /^github\.com/ });
+  await expect(github).toContainText('no rule allows it yet');
+
+  await page.locator('#offline-keep-form input[name=host]').fill('mcp.atlassian.com');
+  await page.locator('#offline-keep-form button[type=submit]').click();
+  await expect(kept).toHaveText(['mcp.atlassian.com']);
+
+  await button.click();
+  await expect(page.locator('#banner')).toHaveText('Kept while offline: 22 common hosts. It applies the next time this sandbox goes offline.');
+  await expect(kept).toHaveCount(23);
+  await expect(kept.first()).toHaveText('mcp.atlassian.com');
+  await expect(github).toContainText('kept');
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveCSS('cursor', 'default');
 });
 
 test('an agent older than offline mode leaves the toggle off and disabled, refresh after refresh', async () => {
@@ -169,6 +213,29 @@ test('an agent older than offline mode leaves the toggle off and disabled, refre
     await expect(toggle).toBeDisabled();
     await expect(page.locator('#offline')).not.toHaveClass(/\bon\b/);
   }
+});
+
+test('Restart hands the page to a new agent and reloads once it answers', async () => {
+  // A second page with a restart; the new agent is faked by /api/health answering another pid.
+  const restartable = await startPage({ groups: GROUPS, restart: () => {} });
+  try {
+    await page.goto(restartable.url);
+    await expect(page.locator('#agent-text')).toContainText(`(pid ${process.pid})`);
+    await expect(page.locator('#agent-text')).toContainText('the sandbox, its containers and its port forwards keep running');
+    let restarted = false;
+    await page.route('**/api/agent/restart', (route) => { restarted = true; route.continue(); });
+    await page.route('**/api/health', (route) => route.fulfill({ json: { pid: restarted ? 1 : process.pid, id: 'app' } }));
+    const reloaded = page.waitForEvent('load');
+    await page.locator('#agent-restart').click();
+    await reloaded;
+    expect(restarted).toBe(true);
+  } finally {
+    await restartable.close();
+  }
+});
+
+test('Restart is off on an agent that can\'t restart itself', async () => {
+  await expect(page.locator('#agent-restart')).toBeDisabled();
 });
 
 test('the page fits a phone screen without scrolling sideways', async () => {
