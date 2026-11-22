@@ -6,13 +6,15 @@ import path from 'node:path';
 import { loadEnv, saveEnv, updateEnv } from '../lib/config.mjs';
 import { createApi, findComposeFiles, parseClaudeInfo, parseContainers } from '../lib/api.mjs';
 import { serveApi, tempHome } from './support/helpers.mjs';
+import { ROOT } from '../lib/environment.mjs';
 
 const TOKEN = 'secret-token';
 
-async function startApi(t, { packagesToken } = {}) {
+async function startApi(t, { packagesToken, restart } = {}) {
   const { home } = tempHome(t);
   const { server, port, paths, folder, sbx } = await serveApi({
     home,
+    restart,
     token: TOKEN,
     global: { claudeConfigRepo: 'https://github.com/me/config.git' },
     runner: {
@@ -321,6 +323,29 @@ test('POST /api/claude/update doesn\'t try while offline mode denies the repo\'s
   assert.deepEqual(sbx.calls.at(-1).slice(0, 3), ['exec', 'portable-app', ['portable-setup', 'pull']]);
 });
 
+test('POST /api/agent/restart answers first, then restarts the agent; the status says which copy runs', async (t) => {
+  let restarted = 0;
+  const { call } = await startApi(t, { restart: () => { restarted++; } });
+  const { agent } = (await call('GET', '/api/status')).body;
+  assert.equal(agent.pid, process.pid);
+  assert.equal(agent.root, ROOT);
+  assert.equal(agent.canRestart, true);
+  assert.ok(!Number.isNaN(Date.parse(agent.startedAt)));
+
+  assert.equal((await call('POST', '/api/agent/restart', { token: 'wrong' })).status, 401);
+  const result = await call('POST', '/api/agent/restart', { body: {} });
+  assert.deepEqual(result.body, { pid: process.pid });
+  assert.equal(restarted, 0);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(restarted, 1);
+});
+
+test('POST /api/agent/restart says so when the agent can\'t restart itself', async (t) => {
+  const { call } = await startApi(t);
+  assert.equal((await call('GET', '/api/status')).body.agent.canRestart, false);
+  assert.equal((await call('POST', '/api/agent/restart', { body: {} })).status, 501);
+});
+
 test('PUT /api/offline denies every host but Claude\'s in one call, and undoes only its own denies', async (t) => {
   const { call, paths, sbx } = await startApi(t);
   sbx.rules = [
@@ -396,6 +421,30 @@ test('hosts kept while offline stay reachable, and follow the list while offline
   assert.deepEqual(off.body, { offline: false, problems: [] });
   assert.deepEqual(denied(), []);
   assert.deepEqual(loadEnv(paths, 'app').overrides.offlineAllow, ['pypi.org']);
+});
+
+test('turning Kept while offline off denies the kept hosts right away, and back on frees them, list intact', async (t) => {
+  const { call, paths, sbx } = await startApi(t);
+  sbx.rules = [
+    { decision: 'allow', resources: ['github.com:443', 'registry.npmjs.org:443'], provenance: { created_via: 'default' } },
+  ];
+  const denied = () => sbx.rules.filter((r) => r.decision === 'deny').map((r) => r.resources[0]).sort();
+  updateEnv(paths, 'app', (e) => { e.overrides.offlineAllow = ['github.com']; e.overrides.offlineAllowOff = true; });
+
+  // Off before going offline: the kept host is denied with the rest.
+  await call('PUT', '/api/offline', { body: { offline: true } });
+  assert.deepEqual(denied(), ['github.com', 'registry.npmjs.org']);
+  assert.equal((await call('GET', '/api/status')).body.claudeRepoBlockedOffline, 'github.com');
+
+  const on = await call('PUT', '/api/settings', { body: { overrides: { offlineAllowOff: null } } });
+  assert.deepEqual(on.body, { problems: [] });
+  assert.deepEqual(denied(), ['registry.npmjs.org']);
+  assert.equal((await call('GET', '/api/status')).body.claudeRepoBlockedOffline, null);
+
+  const off = await call('PUT', '/api/settings', { body: { overrides: { offlineAllowOff: true } } });
+  assert.deepEqual(off.body, { problems: [] });
+  assert.deepEqual(denied(), ['github.com', 'registry.npmjs.org']);
+  assert.deepEqual(loadEnv(paths, 'app').overrides, { offlineAllow: ['github.com'], offlineAllowOff: true });
 });
 
 test('going back online removes the denies sbx holds, not a list kept elsewhere', async (t) => {

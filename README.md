@@ -145,6 +145,7 @@ Every running environment has a page on `127.0.0.1`. `portable ui` opens it, `po
 - **AWS:** see [AWS](#aws).
 - **GitHub Packages:** turns the GitHub packages token on or off for this environment. See [Private npm packages](#private-npm-packages-optional).
 - **Claude configuration:** the configuration repo, its commit, an update button, a checkbox for each skill and rule, and whether each token is stored and Claude is signed in.
+- **Page agent:** the process on your Mac that serves the page and keeps the port forwards in line, which copy of portable it runs from and since when. It loads portable's code when it starts, so **Restart** it after changing or updating that copy. The new one takes the same address; the sandbox, its containers and the forwards (sbx holds them) keep running.
 - **Activity:** what portable did for this environment.
 
 ## AWS
@@ -184,7 +185,7 @@ A rule covers one port, so a host allowed for HTTPS is still refused over `http:
 
 **Offline:** **Go offline** in the page's Network section cuts the sandbox off from everything but Claude, for when all an agent needs is already in it. portable adds a deny rule for this sandbox for every host it may reach (sbx's defaults, the kit, extra hosts), except hosts on `anthropic.com`, `claude.ai` and `claude.com`. A deny wins over every allow ([Docker docs](https://docs.docker.com/ai/governance/local/)). Hosts allowed while it's offline are denied too. It stays offline across `portable` runs and restarts until **Go back online** removes those deny rules. While offline, `git push`, `gh`, npm, image pulls, AWS and MCP servers fail; Claude's API still works. It can't be turned on under sbx's Open preset (an allow rule for every host).
 
-**Kept while offline**, under the button, lists hosts that stay reachable while offline, if a rule allows them (put a new host in the extra allowed hosts too). Wildcards work (`**.github.com`). The list is saved for the environment, so it applies every time it goes offline, and changes apply right away while it is; **Remove** drops one host and **Clear all** empties it. Since a deny beats every allow, keeping `github.com` also leaves a wider rule like `**.github.com` undenied, and its subdomains with it.
+**Kept while offline**, under the button, lists hosts that stay reachable while offline, if a rule allows them (put a new host in the extra allowed hosts too). Wildcards work (`**.github.com`). The list is saved for the environment, so it applies every time it goes offline, and changes apply right away while it is; **Remove** drops one host and **Clear all** empties it. **Turn off** stops keeping them all without forgetting the list, so going offline denies them too; **Turn back on** keeps them again. **Keep common hosts** adds the hosts GitHub, Docker, npm and the AWS docs need in one click; the list under it, collapsed until opened, shows them and marks the ones no rule allows yet. They come from `commonOfflineHosts` in `config.json`. Since a deny beats every allow, keeping `github.com` also leaves a wider rule like `**.github.com` undenied, and its subdomains with it.
 
 ### Docker
 
@@ -216,6 +217,7 @@ Each sandbox has its own Docker engine, so Claude can `docker compose up` a proj
 | `awsProfile` | The Mac's AWS profile to use. AWS is off until a page turns it on | Per environment only |
 | `githubPackages` | Puts the GitHub packages token in the sandbox as `NPM_TOKEN`. Off until a page turns it on | Per environment only |
 | `cpus`, `memory` | The size of each VM, default 4 and `8g`. Fixed when a sandbox is created | Yes |
+| `commonOfflineHosts` | The hosts **Keep common hosts** adds to Kept while offline, by service, like `{"GitHub": ["github.com"]}`. Defaults to GitHub, Docker, npm and the AWS docs | No |
 
 The shell variables `WORKSPACE_DIR`, `PORTABLE_CLAUDE_CONFIG_REPO`, `PORTABLE_CLAUDE_CONFIG_DISABLE` and `PORTABLE_ALLOW_DOMAINS` override `config.json`. Commits use the `user.name` and `user.email` from your Mac's git config.
 
